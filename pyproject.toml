@@ -5,7 +5,13 @@ description = "IftyEdits AI Studio: local-first AI Shorts production for Apple S
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 license = { text = "Proprietary" }
-dependencies = []
+dependencies = [
+    "pydantic-settings>=2.16.3",
+    "streamlit>=1.67.0",
+]
+
+[project.scripts]
+iftyedits = "iftyedits.cli:main"
 
 [dependency-groups]
 dev = [
@@ -48,6 +54,9 @@ ignore = []
 "tests/**" = ["S101", "S603", "S607"]  # asserts and git subprocess calls in tests
 "scripts/**" = ["S603", "T201"]
 
+[tool.ruff.lint.isort]
+known-first-party = ["iftyedits", "tests"]
+
 [tool.ruff.format]
 quote-style = "double"
 
@@ -55,14 +64,21 @@ quote-style = "double"
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["src", "tests", "scripts"]
+files = ["src", "tests", "scripts", "app"]
 mypy_path = "src"
+plugins = ["pydantic.mypy"]
+explicit_package_bases = true
 warn_unreachable = true
 
 # ---------------------------------------------------------------- pytest
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
+pythonpath = ["."]
+filterwarnings = [
+    "error::pytest.PytestUnhandledThreadExceptionWarning",
+    "error::pytest.PytestUnraisableExceptionWarning",
+]
 addopts = ["-ra", "--strict-markers", "--strict-config"]
 markers = [
     "ffmpeg: needs the ffmpeg/ffprobe binaries",

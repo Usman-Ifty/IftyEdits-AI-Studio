@@ -43,6 +43,8 @@ Guiding goals:
   - `pipeline/` — job runner. Stages are idempotent and resumable.
   - `api/` — FastAPI layer, added only when needed. Must reuse services; never duplicates logic.
 - **UI is thin.** `app/` (Streamlit) calls services. It holds no business logic.
+- **Heavy work runs in the worker.** Streamlit pages only validate input and enqueue jobs
+  (`pipeline/jobs.py`); copying, probing and rendering run in `iftyedits worker`.
 - **Dependencies point inward.** `core` imports nothing from other layers. `services` never imports `app` or `api`.
 - **Swappable backends behind interfaces.** Examples: `Transcriber` (faster-whisper, mlx-whisper), `LLMProvider` (local, API). Choose the backend in config.
 - **Explicit data flow.** Stages read inputs and write outputs to known locations under `data/derived/`, and record results in SQLite.
@@ -60,7 +62,8 @@ Guiding goals:
 |---|---|
 | Language | Python 3.12 (uv-managed, never system Python) |
 | Package / env manager | uv, local `.venv`, `uv.lock` committed |
-| Dashboard | Streamlit (Phase 1) |
+| Dashboard | Streamlit, bound to `127.0.0.1` |
+| Configuration | pydantic-settings (env vars and `.env`) |
 | Backend API | FastAPI (when needed) |
 | Storage | SQLite (metadata), filesystem (media) |
 | Video processing | FFmpeg / ffprobe via subprocess (Homebrew build, do not reinstall) |
@@ -145,13 +148,14 @@ uv run pytest
 These rules are enforced by `iftyedits.storage.originals` and its tests. Do not bypass them.
 
 1. **Imports are independent copies.** Never move, hard-link or symlink a user's source file.
-2. **Every original gets a SHA-256 hash** at import. The copy is verified against the source hash.
+2. **Every original gets a SHA-256 hash** at import, computed in the same single pass that copies it. The import is rejected if the source's size or modification time changes during the copy.
 3. **Originals are read-only.** Vault copies are set to mode `0444` and stored under `data/originals/`.
-4. **Never overwrite.** Vault files are created with exclusive-create semantics; an existing file is never replaced.
+4. **Never overwrite.** Copies are written exclusively to `data/staging/` and moved into the vault under a lock; an existing vault file is never replaced. Identical content is stored once, whatever its name or extension.
 5. **Generated files live separately** under `data/derived/` or `data/exports/`. Use `assert_safe_output_path()` before writing any output.
 6. **The source file is opened read-only** and must be byte-identical after import.
-7. **Deletion of originals** happens only through an explicit, user-confirmed action. No automated cleanup may touch `data/originals/`.
-8. User media, transcripts and analytics stay on this machine unless the user explicitly publishes them.
+7. **Deletion of originals** happens only through an explicit, user-confirmed action. No automated cleanup may touch `data/originals/`. Cleanup of interrupted imports is limited to `*.partial` files in `data/staging/`.
+8. **Database failures never lose originals.** The vault copy is kept and `iftyedits reconcile` records it.
+9. User media, transcripts and analytics stay on this machine unless the user explicitly publishes them.
 
 ---
 
