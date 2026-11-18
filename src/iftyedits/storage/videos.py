@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from iftyedits.core.errors import InvalidSourceError
 from iftyedits.core.models import MediaInfo, StreamInfo, Video, VideoSource, VideoStatus
 from iftyedits.storage.db import transaction, utc_now
 
@@ -21,6 +22,7 @@ _STREAM_FIELDS = (
     "pix_fmt",
     "avg_frame_rate",
     "r_frame_rate",
+    "time_base",
     "rotation",
     "color_transfer",
     "color_primaries",
@@ -86,6 +88,26 @@ class VideoRepository:
             (limit,),
         ).fetchall()
         return [_video(r) for r in rows]
+
+    def resolve_reference(self, reference: str) -> Video:
+        """Find a video by numeric id or by a unique SHA-256 prefix (6+ hex characters)."""
+        ref = reference.strip().lower()
+        if ref.isdigit():
+            video = self.get(int(ref))
+            if video is None:
+                raise InvalidSourceError(f"No video with id {ref}")
+            return video
+        if len(ref) < 6 or any(c not in "0123456789abcdef" for c in ref):
+            raise InvalidSourceError("Use a video id or a SHA-256 prefix of at least 6 characters")
+        rows = self.conn.execute(
+            f"SELECT {_VIDEO_COLUMNS} FROM videos WHERE substr(sha256, 1, ?) = ? LIMIT 2",  # noqa: S608
+            (len(ref), ref),
+        ).fetchall()
+        if not rows:
+            raise InvalidSourceError(f"No video matches {ref}")
+        if len(rows) > 1:
+            raise InvalidSourceError(f"Prefix {ref} is ambiguous; use more characters")
+        return _video(rows[0])
 
     def known_hashes(self) -> set[str]:
         """All stored content hashes."""

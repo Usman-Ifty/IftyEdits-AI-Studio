@@ -51,8 +51,14 @@ if scanned:
 scan = st.session_state.get(SCAN_KEY)
 if scan:
     files = [Path(f) for f in scan["files"]]
-    for skipped_path, reason in scan["skipped"]:
-        st.warning(f"Skipped {skipped_path}: {reason}")
+    if scan["skipped"]:
+        st.warning(f"{len(scan['skipped'])} item(s) in this folder will not be imported.")
+        with st.expander("Skipped items and reasons"):
+            st.dataframe(
+                [{"Path": p, "Reason": reason} for p, reason in scan["skipped"]],
+                hide_index=True,
+                width="stretch",
+            )
     if not files:
         st.info("No video files found.")
     else:

@@ -39,8 +39,8 @@ def resolution(streams: list[StreamInfo]) -> str:
     return "-"
 
 
-def video_row(video: Video, streams: list[StreamInfo]) -> dict[str, Any]:
-    """One library table row."""
+def video_row(video: Video, streams: list[StreamInfo], source_count: int) -> dict[str, Any]:
+    """One library table row. ``source_count`` > 1 means duplicate imports were merged."""
     return {
         "ID": video.id,
         "File": video.original_filename,
@@ -48,6 +48,7 @@ def video_row(video: Video, streams: list[StreamInfo]) -> dict[str, Any]:
         "Resolution": resolution(streams),
         "Size": human_size(video.size_bytes),
         "Status": video.status.value,
+        "Sources": source_count,
         "Imported (UTC)": video.imported_at[:19].replace("T", " "),
         "SHA-256": video.sha256[:12],
     }
@@ -91,6 +92,7 @@ def job_row(job: Job) -> dict[str, Any]:
         "Kind": job.kind,
         "File": target or "-",
         "Status": job.status.value,
+        "Outcome": str(job.result.get("outcome", "")) if job.result else "",
         "Progress": job.progress,
         "Detail": job.error or job.message or "",
         "Attempts": job.attempts,

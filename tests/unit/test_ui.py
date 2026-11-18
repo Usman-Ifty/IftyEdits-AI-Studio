@@ -145,3 +145,39 @@ def test_import_page_reports_missing_path(app_env: None, tmp_path: Path) -> None
     app.button[0].click()
     app.run()
     assert any("not found" in e.value for e in app.error)
+
+
+def test_library_marks_duplicate_imports(
+    app_env: None, ingest: IngestService, make_media: MakeMedia
+) -> None:
+    source = make_media("talk.mp4")
+    ingest.import_video(source)
+    ingest.import_video(make_media("talk copy.MOV", kind=b"", body=source.read_bytes()))
+    app = _run("library.py")
+    assert any("imported from 2 locations" in i.value for i in app.info)
+    assert app.dataframe[0].value["Sources"].tolist() == [2]
+
+
+def test_import_page_lists_skipped_items(app_env: None, make_media: MakeMedia) -> None:
+    folder = make_media("a.mp4").parent
+    make_media("notes.txt")
+    make_media("sub/b.mp4")
+    app = _run("import_videos.py")
+    app.text_input[0].set_value(str(folder))
+    app.button[0].click()
+    app.run()
+    assert any("2 item(s) in this folder will not be imported" in w.value for w in app.warning)
+    table = next(d.value for d in app.dataframe if "Reason" in d.value.columns)
+    reasons = table["Reason"].tolist()
+    assert sorted(reasons) == sorted(
+        ["subfolder (enable recursive import to include)", "unsupported file extension"]
+    )
+
+
+def test_job_row_shows_outcome() -> None:
+    job = Job(
+        2, "import_file", {"path": "/x/a.mp4"}, JobStatus.SUCCEEDED, 1.0, "duplicate: a.mp4",
+        None, {"outcome": "duplicate"}, 1, "2026-11-18T10:00:00.000000+00:00", None, None,
+        None, None,
+    )  # fmt: skip
+    assert job_row(job)["Outcome"] == "duplicate"

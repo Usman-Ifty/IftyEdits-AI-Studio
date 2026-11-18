@@ -88,6 +88,7 @@ def _parse_stream(raw: dict[str, Any]) -> StreamInfo:
         pix_fmt=_str(raw.get("pix_fmt")),
         avg_frame_rate=parse_rate(raw.get("avg_frame_rate")),
         r_frame_rate=parse_rate(raw.get("r_frame_rate")),
+        time_base=parse_time_base(raw.get("time_base")),
         rotation=_rotation(raw, tags),
         color_transfer=_str(raw.get("color_transfer")),
         color_primaries=_str(raw.get("color_primaries")),
@@ -110,6 +111,17 @@ def parse_rate(value: object) -> float | None:
     except (ValueError, ZeroDivisionError):
         return None
     return float(rate) if rate > 0 else None
+
+
+def parse_time_base(value: object) -> str | None:
+    """Return a valid positive ``num/den`` time base such as ``1/15360``, else None."""
+    if not isinstance(value, str) or "/" not in value:
+        return None
+    try:
+        num, den = (int(part) for part in value.split("/", 1))
+    except ValueError:
+        return None
+    return f"{num}/{den}" if num > 0 and den > 0 else None
 
 
 def _rotation(raw: dict[str, Any], tags: dict[str, Any]) -> int:

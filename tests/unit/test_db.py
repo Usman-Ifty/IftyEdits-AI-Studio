@@ -16,7 +16,14 @@ from iftyedits.storage.videos import VideoRepository
 PROBE = json.dumps(
     {
         "streams": [
-            {"index": 0, "codec_type": "video", "codec_name": "h264", "width": 640, "height": 360},
+            {
+                "index": 0,
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 640,
+                "height": 360,
+                "time_base": "1/15360",
+            },
             {"index": 1, "codec_type": "audio", "codec_name": "aac", "channels": 2},
         ],
         "format": {"format_name": "mp4", "duration": "2.0", "bit_rate": "1000"},
@@ -37,6 +44,25 @@ def test_migrations_apply_and_are_idempotent(conn: sqlite3.Connection) -> None:
     assert db.migrate(conn) == latest
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert {"videos", "video_sources", "media_streams", "jobs", "workers"} <= tables
+
+
+def test_upgrade_from_v1_preserves_data(tmp_path: Path) -> None:
+    conn = db.connect(tmp_path / "old.sqlite")
+    number, _, sql = db.available_migrations()[0]
+    conn.executescript(f"BEGIN; {sql}\nPRAGMA user_version = {number}; COMMIT;")
+    conn.execute(
+        "INSERT INTO videos (sha256, vault_relpath, original_filename, size_bytes, status, "
+        "imported_at) VALUES (?, 'aa/x', 'x.mp4', 1, 'ready', 'now')",
+        (SHA_A,),
+    )
+    conn.execute(
+        "INSERT INTO media_streams (video_id, stream_index, codec_type) VALUES (1, 0, 'video')"
+    )
+
+    assert db.migrate(conn) == len(db.available_migrations())
+    streams = VideoRepository(conn).streams(1)
+    assert [(s.codec_type, s.time_base) for s in streams] == [("video", None)]
+    conn.close()
 
 
 def test_pragmas(conn: sqlite3.Connection) -> None:
@@ -68,6 +94,7 @@ def test_record_import_creates_video_streams_and_source(conn: sqlite3.Connection
     assert video.status is VideoStatus.READY
     assert video.duration_s == 2.0
     assert [s.codec_type for s in repo.streams(video.id)] == ["video", "audio"]
+    assert repo.streams(video.id)[0].time_base == "1/15360"
     assert [s.source_path for s in repo.sources(video.id)] == ["/Users/me/clip.mp4"]
     assert repo.get_by_sha(SHA_A) == video
     assert repo.find_by_size(1234) == [video]
@@ -127,6 +154,27 @@ def test_list_recent_orders_newest_first(conn: sqlite3.Connection) -> None:
             source_path=None,
         )
     assert [v.sha256 for v in repo.list_recent()] == [SHA_B, SHA_A]
+
+
+def test_resolve_reference(conn: sqlite3.Connection) -> None:
+    from iftyedits.core.errors import InvalidSourceError
+
+    repo = VideoRepository(conn)
+    for sha in ("abcdef" + "0" * 58, "abcdef" + "1" * 58):
+        repo.record_import(
+            sha256=sha,
+            vault_relpath=f"ab/{sha}",
+            original_filename="x.mp4",
+            size_bytes=1,
+            info=None,
+            probe_error="x",
+            source_path=None,
+        )
+    assert repo.resolve_reference("1").id == 1
+    assert repo.resolve_reference("ABCDEF1").id == 2
+    for bad in ("abcdef", "abc", "3", "xyzxyzxyz"):
+        with pytest.raises(InvalidSourceError):
+            repo.resolve_reference(bad)
 
 
 def test_invalid_sha_rejected_by_schema(conn: sqlite3.Connection) -> None:

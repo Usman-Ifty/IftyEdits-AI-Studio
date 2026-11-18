@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from pathlib import Path
 
@@ -15,7 +16,17 @@ from iftyedits.core.errors import (
     UnsupportedMediaError,
 )
 from iftyedits.core.models import ImportOutcome, VideoStatus
-from iftyedits.services.ingest import IngestService
+from iftyedits.services.ingest import (
+    SKIP_EXTENSION,
+    SKIP_HIDDEN,
+    SKIP_HIDDEN_DIR,
+    SKIP_SPECIAL,
+    SKIP_SUBFOLDER,
+    SKIP_SYMLINK,
+    SKIP_SYMLINK_DIR,
+    Discovery,
+    IngestService,
+)
 from iftyedits.storage.originals import sha256_file
 from tests.conftest import FAKE_AUDIO, FakeProber, MakeMedia
 
@@ -230,13 +241,24 @@ def test_progress_callback_is_forwarded(ingest: IngestService, make_media: MakeM
 # ------------------------------------------------------------------ discovery
 
 
-def test_discover_top_level_only(ingest: IngestService, make_media: MakeMedia) -> None:
+def _reasons(found: Discovery) -> dict[str, str]:
+    return {p.name: reason for p, reason in found.skipped}
+
+
+def test_discover_top_level_reports_every_skipped_entry(
+    ingest: IngestService, make_media: MakeMedia
+) -> None:
     a = make_media("a.mp4")
     make_media("nested/b.mov")
     make_media("readme.txt")
     make_media(".hidden.mp4")
     found = ingest.discover(a.parent)
     assert found.files == (a,)
+    assert _reasons(found) == {
+        "nested": SKIP_SUBFOLDER,
+        "readme.txt": SKIP_EXTENSION,
+        ".hidden.mp4": SKIP_HIDDEN,
+    }
 
 
 def test_discover_recursive(ingest: IngestService, make_media: MakeMedia) -> None:
@@ -245,6 +267,7 @@ def test_discover_recursive(ingest: IngestService, make_media: MakeMedia) -> Non
     make_media(".cache/c.mp4")
     found = ingest.discover(a.parent, recursive=True)
     assert set(found.files) == {a, b}
+    assert _reasons(found) == {".cache": SKIP_HIDDEN_DIR}
 
 
 def test_discover_skips_symlinks(
@@ -260,8 +283,21 @@ def test_discover_skips_symlinks(
     found = ingest.discover(a.parent, recursive=True)
 
     assert found.files == (a,)
-    reasons = {p.name: r for p, r in found.skipped}
-    assert reasons == {"linked.mp4": "symbolic link", "linked_dir": "symbolic link to a folder"}
+    assert _reasons(found) == {"linked.mp4": SKIP_SYMLINK, "linked_dir": SKIP_SYMLINK_DIR}
+
+
+def test_discover_reports_special_files(ingest: IngestService, make_media: MakeMedia) -> None:
+    a = make_media("a.mp4")
+    os.mkfifo(a.parent / "pipe.mp4")
+    found = ingest.discover(a.parent)
+    assert found.files == (a,)
+    assert _reasons(found) == {"pipe.mp4": SKIP_SPECIAL}
+
+
+def test_discover_handles_unicode_and_spaces(ingest: IngestService, make_media: MakeMedia) -> None:
+    clip = make_media("Café Señor 東京 🎬/Episode 01 — final cut.mov")
+    found = ingest.discover(clip.parent.parent, recursive=True)
+    assert found.files == (clip,)
 
 
 def test_discover_refuses_data_directory(ingest: IngestService, settings: Settings) -> None:

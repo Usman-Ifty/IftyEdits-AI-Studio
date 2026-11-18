@@ -22,8 +22,9 @@ from iftyedits.pipeline.jobs import JobQueue
 from iftyedits.pipeline.worker import Worker
 from iftyedits.services.ingest import IngestService, build_vault, discover, validate_source
 from iftyedits.storage.db import open_database, schema_version
-from iftyedits.storage.originals import ProgressCallback
+from iftyedits.storage.originals import ProgressCallback, sha256_file
 from iftyedits.storage.videos import VideoRepository
+from iftyedits.ui.formatting import human_duration, human_size, stream_row
 
 logger = logging.getLogger("iftyedits")
 
@@ -41,19 +42,21 @@ def _configure_logging(settings: Settings) -> None:
     )
 
 
-def _expand(settings: Settings, paths: Sequence[str], recursive: bool) -> list[Path]:
-    """Turn file and folder arguments into a validated list of files."""
+def _expand(settings: Settings, paths: Sequence[str], recursive: bool) -> tuple[list[Path], int]:
+    """Turn file and folder arguments into files; print and count every skipped entry."""
     files: list[Path] = []
+    skipped_count = 0
     for raw in paths:
         path = Path(raw).expanduser()
         if path.is_dir():
             found = discover(settings, path, recursive=recursive)
             for skipped, reason in found.skipped:
                 print(f"skip  {skipped}  ({reason})", file=sys.stderr)
+            skipped_count += len(found.skipped)
             files.extend(found.files)
         else:
             files.append(path)
-    return files
+    return files, skipped_count
 
 
 def _progress_printer(name: str) -> ProgressCallback:
@@ -70,7 +73,7 @@ def _progress_printer(name: str) -> ProgressCallback:
 
 def cmd_import(settings: Settings, args: argparse.Namespace) -> int:
     """Import files synchronously in this process."""
-    files = _expand(settings, args.paths, args.recursive)
+    files, skipped = _expand(settings, args.paths, args.recursive)
     if not files:
         print("No video files found.", file=sys.stderr)
         return EXIT_FAILED
@@ -95,14 +98,18 @@ def cmd_import(settings: Settings, args: argparse.Namespace) -> int:
                 f"\n{result.outcome.value:<9} #{video.id}  {video.sha256[:12]}  "
                 f"{video.status.value}  {path}"
             )
-    print(f"{len(files) - failures} succeeded, {failures} failed", file=sys.stderr)
+    print(
+        f"{len(files) - failures} succeeded, {failures} failed, {skipped} skipped",
+        file=sys.stderr,
+    )
     return EXIT_FAILED if failures else EXIT_OK
 
 
 def cmd_enqueue(settings: Settings, args: argparse.Namespace) -> int:
     """Queue files for the background worker."""
     files: list[Path] = []
-    for path in _expand(settings, args.paths, args.recursive):
+    expanded, _ = _expand(settings, args.paths, args.recursive)
+    for path in expanded:
         try:
             files.append(validate_source(settings, path))
         except IftyEditsError as exc:
@@ -131,6 +138,42 @@ def cmd_worker(settings: Settings, args: argparse.Namespace) -> int:
     finally:
         worker.close()
     logger.info("Worker processed %d job(s)", processed)
+    return EXIT_OK
+
+
+def cmd_show(settings: Settings, args: argparse.Namespace) -> int:
+    """Print full details for one video, optionally re-verifying its vault hash."""
+    with closing(open_database(settings.db_path)) as conn:
+        repo = VideoRepository(conn)
+        video = repo.resolve_reference(args.video)
+        streams = repo.streams(video.id)
+        sources = repo.sources(video.id)
+    vault_path = settings.originals_dir / video.vault_relpath
+    print(f"video       #{video.id}  {video.original_filename}")
+    print(f"status      {video.status.value}")
+    if video.probe_error:
+        print(f"probe error {video.probe_error}")
+    print(f"sha256      {video.sha256}")
+    print(f"vault       {vault_path}")
+    print(f"size        {human_size(video.size_bytes)} ({video.size_bytes} bytes)")
+    print(f"duration    {human_duration(video.duration_s)}")
+    print(f"container   {video.format_name or '-'}")
+    print(f"imported    {video.imported_at}")
+    print("streams")
+    for stream in streams:
+        row = stream_row(stream)
+        print(
+            f"  #{row['#']} {row['Type']:<8} {row['Codec']:<8} {row['Size']:<10} "
+            f"fps {row['FPS']:<8} tb {stream.time_base or '-':<10} rot {row['Rotation']:<3} "
+            f"{row['Audio']}  {row['Flags']}"
+        )
+    print(f"sources     {len(sources)}" + ("  (duplicate imports)" if len(sources) > 1 else ""))
+    for source in sources:
+        print(f"  {source.source_path}  ({source.imported_at})")
+    if args.verify:
+        intact = vault_path.is_file() and sha256_file(vault_path) == video.sha256
+        print(f"integrity   {'OK' if intact else 'MISMATCH OR MISSING'}")
+        return EXIT_OK if intact else EXIT_FAILED
     return EXIT_OK
 
 
@@ -240,6 +283,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("worker", help="run the background job worker")
     p.add_argument("--once", action="store_true", help="exit when the queue is empty")
     p.set_defaults(func=cmd_worker)
+
+    p = sub.add_parser("show", help="show details of one video")
+    p.add_argument("video", help="video id (e.g. 3) or SHA-256 prefix (at least 6 characters)")
+    p.add_argument("--verify", action="store_true", help="re-hash the vault copy")
+    p.set_defaults(func=cmd_show)
 
     p = sub.add_parser("list", help="list imported videos")
     p.add_argument("--limit", type=int, default=100)

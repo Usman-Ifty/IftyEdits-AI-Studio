@@ -86,11 +86,21 @@ def validate_source(settings: Settings, source: Path) -> Path:
     return resolved
 
 
-def discover(settings: Settings, folder: Path, *, recursive: bool = False) -> Discovery:
-    """List importable videos in ``folder``.
+SKIP_SYMLINK = "symbolic link (not followed)"
+SKIP_SYMLINK_DIR = "symbolic link to a folder (not followed)"
+SKIP_HIDDEN = "hidden file"
+SKIP_HIDDEN_DIR = "hidden folder"
+SKIP_EXTENSION = "unsupported file extension"
+SKIP_SUBFOLDER = "subfolder (enable recursive import to include)"
+SKIP_SPECIAL = "not a regular file"
 
-    Symbolic links (files and directories) are never followed and are reported
-    as skipped. Hidden files and files with other extensions are ignored.
+
+def discover(settings: Settings, folder: Path, *, recursive: bool = False) -> Discovery:
+    """List importable videos in ``folder`` and report every entry that is not imported.
+
+    Nothing is skipped silently: symbolic links (never followed), hidden entries,
+    unsupported extensions, special files and, without ``recursive``, subfolders are
+    returned in ``Discovery.skipped`` with a reason.
     """
     try:
         root = folder.expanduser().resolve(strict=True)
@@ -105,20 +115,29 @@ def discover(settings: Settings, folder: Path, *, recursive: bool = False) -> Di
     skipped: list[tuple[Path, str]] = []
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
         current = Path(dirpath)
+        descend: list[str] = []
         for name in sorted(dirnames):
-            if (current / name).is_symlink():
-                skipped.append((current / name, "symbolic link to a folder"))
-        dirnames[:] = sorted(d for d in dirnames if not d.startswith(".")) if recursive else []
+            path = current / name
+            if path.is_symlink():
+                skipped.append((path, SKIP_SYMLINK_DIR))
+            elif name.startswith("."):
+                skipped.append((path, SKIP_HIDDEN_DIR))
+            elif not recursive:
+                skipped.append((path, SKIP_SUBFOLDER))
+            else:
+                descend.append(name)
+        dirnames[:] = descend
         for name in sorted(filenames):
             path = current / name
-            if name.startswith("."):
-                continue
-            if path.suffix.lower() not in settings.video_extensions:
-                continue
             if path.is_symlink():
-                skipped.append((path, "symbolic link"))
-                continue
-            if path.is_file():
+                skipped.append((path, SKIP_SYMLINK))
+            elif name.startswith("."):
+                skipped.append((path, SKIP_HIDDEN))
+            elif path.suffix.lower() not in settings.video_extensions:
+                skipped.append((path, SKIP_EXTENSION))
+            elif not path.is_file():
+                skipped.append((path, SKIP_SPECIAL))
+            else:
                 files.append(path)
     return Discovery(tuple(files), tuple(skipped))
 

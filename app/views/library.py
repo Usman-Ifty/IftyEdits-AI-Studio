@@ -26,7 +26,7 @@ if not videos:
     st.stop()
 
 st.dataframe(
-    [video_row(v, streams[v.id]) for v in videos],
+    [video_row(v, streams[v.id], len(sources[v.id])) for v in videos],
     hide_index=True,
     width="stretch",
 )
@@ -54,6 +54,11 @@ st.code(
 )
 
 st.markdown("**Imported from**")
+if len(sources[video.id]) > 1:
+    st.info(
+        f"Identical content was imported from {len(sources[video.id])} locations. "
+        "It is stored once in the vault."
+    )
 if sources[video.id]:
     for source in sources[video.id]:
         st.text(f"{source.source_path}   ({source.imported_at[:19].replace('T', ' ')} UTC)")

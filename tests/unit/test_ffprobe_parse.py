@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from iftyedits.adapters.ffprobe import FFprobe, parse_probe_json, parse_rate
+from iftyedits.adapters.ffprobe import FFprobe, parse_probe_json, parse_rate, parse_time_base
 from iftyedits.core.errors import ExternalToolError, ProbeError
 
 H264_AAC: dict[str, Any] = {
@@ -24,6 +24,7 @@ H264_AAC: dict[str, Any] = {
             "pix_fmt": "yuv420p",
             "r_frame_rate": "30000/1001",
             "avg_frame_rate": "30000/1001",
+            "time_base": "1/30000",
             "duration": "120.120000",
             "bit_rate": "8000000",
             "disposition": {"attached_pic": 0},
@@ -115,6 +116,7 @@ def test_h264_aac() -> None:
     assert not video.is_vfr
     assert not video.is_hdr
     assert video.rotation == 0
+    assert video.time_base == "1/30000"
     audio = info.audio_streams[0]
     assert (audio.sample_rate, audio.channels, audio.language) == (48000, 2, "eng")
     assert json.loads(info.raw_json) == H264_AAC
@@ -157,6 +159,15 @@ def test_parse_rate(value: object, expected: float | None) -> None:
         assert result is None
     else:
         assert result == pytest.approx(expected)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("1/15360", "1/15360"), ("1001/30000", "1001/30000"), ("0/1", None), ("1/0", None),
+     ("abc", None), ("", None), (None, None)],
+)  # fmt: skip
+def test_parse_time_base(value: object, expected: str | None) -> None:
+    assert parse_time_base(value) == expected
 
 
 @pytest.mark.parametrize("text", ["not json", "[]", '{"streams": {}, "format": []}'])

@@ -47,6 +47,7 @@ class StreamInfo:
     pix_fmt: str | None = None
     avg_frame_rate: float | None = None
     r_frame_rate: float | None = None
+    time_base: str | None = None
     rotation: int = 0
     color_transfer: str | None = None
     color_primaries: str | None = None

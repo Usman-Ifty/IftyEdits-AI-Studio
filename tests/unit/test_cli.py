@@ -10,6 +10,7 @@ from iftyedits import cli
 from iftyedits.config import Settings
 from iftyedits.core.models import JobStatus
 from iftyedits.pipeline.jobs import JobQueue
+from iftyedits.services.ingest import IngestService
 from iftyedits.storage.db import open_database
 from tests.conftest import MakeMedia
 
@@ -79,3 +80,56 @@ def test_env_file_is_read_from_home(
     monkeypatch.setenv("IFTYEDITS_HOME", str(home))
     monkeypatch.delenv("IFTYEDITS_DATA_DIR", raising=False)
     assert Settings.from_env().data_dir == (home / "custom-data").resolve()
+
+
+def test_show_by_id_and_prefix_with_verify(
+    cli_env: Settings,
+    ingest: IngestService,
+    make_media: MakeMedia,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = make_media("Café 東京 interview.mp4")
+    video = ingest.import_video(source).video
+    ingest.import_video(make_media("copy.MOV", kind=b"", body=source.read_bytes()))
+
+    assert cli.main(["show", str(video.id), "--verify"]) == 0
+    out = capsys.readouterr().out
+    assert "Café 東京 interview.mp4" in out
+    assert "integrity   OK" in out
+    assert "sources     2  (duplicate imports)" in out
+
+    assert cli.main(["show", video.sha256[:8]]) == 0
+    assert video.sha256 in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("ref", ["999", "abc", "zzzzzzzz", "ffffffff"])
+def test_show_unknown_reference_fails(
+    cli_env: Settings, ref: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert cli.main(["show", ref]) == 1
+    assert "Error:" in capsys.readouterr().err
+
+
+def test_show_verify_detects_tampering(
+    cli_env: Settings,
+    ingest: IngestService,
+    make_media: MakeMedia,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    video = ingest.import_video(make_media("a.mp4")).video
+    stored = cli_env.originals_dir / video.vault_relpath
+    stored.chmod(0o644)
+    stored.write_bytes(b"tampered")
+    assert cli.main(["show", str(video.id), "--verify"]) == 1
+    assert "MISMATCH" in capsys.readouterr().out
+
+
+def test_import_folder_summary_counts_skipped(
+    cli_env: Settings, make_media: MakeMedia, capsys: pytest.CaptureFixture[str]
+) -> None:
+    folder = make_media("notes.txt").parent
+    make_media(".hidden.mp4")
+    assert cli.main(["enqueue", str(folder)]) == 1
+    err = capsys.readouterr().err
+    assert "notes.txt" in err and "unsupported file extension" in err
+    assert ".hidden.mp4" in err and "hidden file" in err

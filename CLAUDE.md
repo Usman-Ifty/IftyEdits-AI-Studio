@@ -31,6 +31,11 @@ Guiding goals:
 - **No vendor lock-in.** OpusClip, or any similar SaaS, must never be a required dependency.
 - **Originals are sacred.** Imported source media is never modified, moved or overwritten.
 
+**Product roadmap:** [docs/ROADMAP.md](docs/ROADMAP.md) defines every phase, its scope,
+acceptance criteria, the recommended order and the progress-tracking format. Read the
+relevant phase there before starting work. This file holds the rules that apply to all phases;
+if the two ever conflict, the rules here win until this file is updated.
+
 ---
 
 ## 2. Architecture principles
@@ -213,6 +218,7 @@ A feature is done only when **all** of the following hold:
 - [ ] New config keys are documented in `.env.example` and the README.
 - [ ] New dependencies are justified in the commit message.
 - [ ] The diff has been reviewed before commit.
+- [ ] The phase's acceptance criteria in [docs/ROADMAP.md](docs/ROADMAP.md) are met and progress is recorded there.
 
 ---
 

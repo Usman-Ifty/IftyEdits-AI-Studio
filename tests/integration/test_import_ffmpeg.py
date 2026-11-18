@@ -41,6 +41,7 @@ def test_ffprobe_reads_generated_clip(media_dir: Path) -> None:
     assert video is not None
     assert (video.codec_name, video.width, video.height) == ("h264", 320, 240)
     assert video.avg_frame_rate == pytest.approx(30.0)
+    assert video.time_base is not None
     assert info.audio_streams[0].codec_name == "aac"
     assert info.duration_s == pytest.approx(2.0, abs=0.2)
 
@@ -86,6 +87,17 @@ def test_remuxed_file_is_distinct_content(real_ingest: IngestService, user_copy:
     second = real_ingest.import_video(user_copy / "clip_remux.mkv")
     assert second.outcome is ImportOutcome.IMPORTED
     assert second.video.sha256 != first.video.sha256
+
+
+def test_unicode_and_space_paths_import(real_ingest: IngestService, user_copy: Path) -> None:
+    folder = user_copy / "Café Señor 東京 🎬"
+    folder.mkdir()
+    target = folder / "Episode 01 — final cut.mp4"
+    shutil.copyfile(user_copy / "clip.mp4", target)
+    result = real_ingest.import_video(target)
+    assert result.outcome is ImportOutcome.IMPORTED
+    assert result.video.original_filename == "Episode 01 — final cut.mp4"
+    assert [s.source_path for s in real_ingest.repo.sources(result.video.id)] == [str(target)]
 
 
 def test_video_without_audio_is_accepted(real_ingest: IngestService, user_copy: Path) -> None:
@@ -142,8 +154,13 @@ def test_cli_import_list_check_reconcile(
     assert cli.main(["list"]) == 0
     assert "clip.mp4" in capsys.readouterr().out
 
+    assert cli.main(["show", "1", "--verify"]) == 0
+    shown = capsys.readouterr().out
+    assert "integrity   OK" in shown
+    assert "h264" in shown
+
     assert cli.main(["check"]) == 0
-    assert "schema v1" in capsys.readouterr().out
+    assert "schema v2" in capsys.readouterr().out
 
     assert cli.main(["reconcile"]) == 0
     assert "Adopted 0 file(s)." in capsys.readouterr().out

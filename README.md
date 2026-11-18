@@ -1,7 +1,9 @@
 # IftyEdits AI Studio
 
 Local-first AI studio that turns long-form video into YouTube Shorts.
-Built for Apple Silicon (M1 Max). Development rules live in [CLAUDE.md](CLAUDE.md).
+Built for Apple Silicon (M1 Max). Development rules live in [CLAUDE.md](CLAUDE.md). The phased product plan is in
+[docs/ROADMAP.md](docs/ROADMAP.md), status in [docs/PROGRESS.md](docs/PROGRESS.md) and
+decisions in [docs/DECISIONS.md](docs/DECISIONS.md).
 
 **Status:** Phase 1A, video import. Local files and folders are imported into a protected
 vault, probed with ffprobe and listed in a Streamlit library.
@@ -45,11 +47,13 @@ uv run streamlit run app/Home.py
 | `iftyedits enqueue PATH... [-r]` | Queue files or folders for the background worker |
 | `iftyedits worker [--once]` | Run queued jobs (imports) |
 | `iftyedits list` | List imported videos |
+| `iftyedits show ID\|SHA [--verify]` | Show one video; `--verify` re-hashes the vault copy |
 | `iftyedits reconcile` | Record vault files that have no database row |
 | `iftyedits check` | Verify ffprobe, data directory, database and workers |
 | `iftyedits ui [--port N] [--no-worker]` | Start Streamlit on localhost plus a worker |
 
-`-r` / `--recursive` includes subfolders. Symbolic links inside folders are skipped.
+`-r` / `--recursive` includes subfolders. Every entry that is not imported (symbolic link,
+hidden file, other extension, subfolder without `-r`) is listed with its reason.
 
 ## How import works
 
