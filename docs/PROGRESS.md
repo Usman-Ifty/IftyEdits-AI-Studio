@@ -564,3 +564,18 @@ fire on commentary wording in a gameplay breakdown. Strength and weakness lines 
 component's detail text (for example "Weak start") under Strengths when its score is high.
 Suggested follow-up: a boilerplate/CTA penalty with a `SCORING_VERSION` bump.
 
+
+
+### Scoring quality pass (2026-11-22)
+
+Versions bumped to scoring 2, signals 2, candidates 2 (see D23). New `core/signals.py`
+boilerplate and affect gating, `core/candidates.py` edge rules, `core/scoring.py` penalty and
+strength/weakness separation; new `tests/unit/test_scoring_quality.py` (about 45 tests).
+
+Real GTA 6 re-analysis (analysis 3; analysis 1 kept as the old v1 result, 17 suggestions):
+the old #5 outro ("If you liked this video, click like", 61.6) is now rank 16 of 17 at 33.3 with
+"Channel boilerplate" as its first weakness; the intro-anchored clip no longer starts on the
+intro sentence (60.3, a mid-video handover, still rank 5); the "disgusting" false emotional clip
+is gone; the 10:26-11:05 Q&A stays 63.0 and the "Oh my god" clip 60.8. Remaining limits are in D23.
+
+Next recommended task: owner review of the re-ranked clips, then Phase 3A (not started).

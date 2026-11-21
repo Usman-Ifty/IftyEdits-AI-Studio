@@ -327,3 +327,32 @@ updating the code stop `iftyedits ui` and start it again (the guide says so).
 **Consequences:** A flaky connection no longer throws away hundreds of megabytes. Resume
 across separate jobs is not implemented: a failed job's staging folder is discarded.
 
+
+---
+
+## D23 — Boilerplate penalty, stricter affect labels, strengths and weaknesses kept apart (2026-11-22)
+
+**Context:** The real GTA 6 analysis ranked a closing "like and subscribe" clip fifth and an
+intro line fourth. Ordinary commentary was labelled "Funny moment" or "Emotional moment" on one
+mild word, and a component's detail text such as "Weak start" could appear under Strengths.
+**Decision:** `SCORING_VERSION`, `SIGNALS_VERSION` and `CANDIDATES_VERSION` are now 2, so
+existing analyses are not reused and a new run replaces them.
+- *Boilerplate.* English call-to-action, channel-intro and sign-off wording is matched by
+  lexicon (`core/signals.py`). Each sentence gets a strength; a clip's boilerplate share is the
+  word-weighted fraction of such sentences. The penalty is proportional, not positional: 0 below
+  8% share, then 45 points per unit share, capped at 25. A genuine hook with one incidental
+  "subscribe" stays almost untouched. A boilerplate first or last sentence also halves the
+  hook, context and payoff values. Boilerplate is never a hook, question or dialogue, and the
+  generator no longer proposes a topic block that is mostly boilerplate or starts or ends on a
+  boilerplate sentence by choice. The matched sentences are stored under `evidence.boilerplate`.
+- *Affect.* Humor or emotion is accepted only with a strong cue (weight 0.8 or more), two cues,
+  an exclamation mark, or a short reaction opener. Negated cues are dropped ("not funny"), and
+  literal uses such as "I guess what" are blocked. A weak single word no longer sets the
+  category.
+- *Strengths and weaknesses.* Strengths come only from the positive text of components scoring
+  0.7 or more. Weaknesses list penalties first, then components under 0.4, otherwise the
+  component's specific flaw. A component that found no cue is not reported as a weakness.
+**Consequences:** Scores of genuine clips are unchanged or nearly so; intro, outro and CTA clips
+drop. Limits: English only; heuristic text cues, no tone-of-voice analysis; CTA wording outside
+the lexicon is missed, so a partly recognised outro can still appear low in the list; a mid-video
+host handover is not boilerplate and may still rank.

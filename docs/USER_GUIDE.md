@@ -167,7 +167,9 @@ Use **Sort by** (rank, score, evidence quality, duration, position), **Moment ty
 list. Pick a clip under **Inspect** to see:
 
 - the time span, moment type, score and how much evidence supports it;
-- why it was chosen, its strengths and weaknesses, and the transcript excerpt;
+- why it was chosen, its strengths and weaknesses (strengths are only positive evidence;
+  penalties such as **Channel boilerplate**, meaning intro, outro or "like and subscribe" wording,
+  are listed first under weaknesses), and the transcript excerpt;
 - the **score breakdown**: each factor's value (0-100), its weight and the reason. A weight of
   0 means it was not assessed (for example wording cues in a non-English transcript);
 - **Evidence signals**: transcript, audio and scene signals inside the clip, each with its
@@ -308,7 +310,7 @@ Data folders (never committed to Git):
 
 - No captions, vertical reframing, editing, Shorts export or uploading yet. Clip finding
   suggests spans only; it does not cut video.
-- Clip scoring uses English wording cues, transcript timings, loudness and scene changes.
+- Clip scoring uses English wording cues (including boilerplate detection), transcript timings, loudness and scene changes.
   It does not analyse faces, speakers or tone of voice, and suggestions cannot be previewed or
   have their boundaries adjusted in the app yet.
 - Transcription runs on the CPU. On an M1 Max, `tiny` ran about 33x and `base` about 20x faster

@@ -10,6 +10,9 @@ Candidates are grown around evidence, never cut at fixed intervals:
 - **Thought starts**: a sentence after a pause that does not open with a continuation
   word ("and", "but", "so"...) starts a self-contained thought.
 
+Intros, calls to action and sign-offs ("welcome back", "like and subscribe", "thanks for
+watching") are poor starts and ends, so boundaries avoid them when the clip can end earlier.
+
 Boundaries always fall on sentence edges (word timings when available), a little
 before the first word and after the last, inside the silence between sentences (never
 inside a word), snapped to a nearby scene change when one falls in that silence. Ends
@@ -25,9 +28,14 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from iftyedits.core.clip_models import CandidateDraft, ContentSignal, Evidence, Sentence, SignalKind
-from iftyedits.core.signals import is_question, starts_with_connector
+from iftyedits.core.signals import (
+    boilerplate_match,
+    boilerplate_share,
+    is_question,
+    starts_with_connector,
+)
 
-CANDIDATES_VERSION = 1
+CANDIDATES_VERSION = 2
 """Bump when generation rules change, so stored analyses are not reused."""
 
 ANCHOR_KINDS = frozenset(
@@ -54,6 +62,8 @@ TAIL_S = 0.35
 SNAP_S = 0.6
 NEAR_DUPLICATE_S = 1.0
 MIN_SPEECH_S = 3.0
+PURE_BOILERPLATE_SHARE = 0.6
+"""A whole topic block this promotional is an intro or outro, not a clip."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +109,7 @@ class _Timeline:
             for s in evidence.signals
             if s.kind is SignalKind.TOPIC_SHIFT and "after_sentence" in s.evidence
         }
+        self.boilerplate = [boilerplate_match(s) is not None for s in self.sentences]
         self.cuts = sorted(c.time_s for c in evidence.scene_cuts or ())
 
     def index_at(self, t: float) -> int:
@@ -123,6 +134,8 @@ class _Timeline:
             quality += 0.2
         if i > 0 and not self.sentences[i - 1].terminal:
             quality -= 0.3  # the previous "sentence" was cut by a pause, not finished
+        if self.boilerplate[i]:
+            quality -= 0.5  # never open a clip on an intro or a call to action
         return quality
 
     def end_quality(self, j: int) -> float:
@@ -132,6 +145,8 @@ class _Timeline:
             quality += 0.3
         if not is_question(s):
             quality += 0.2
+        if self.boilerplate[j]:
+            quality -= 0.5  # end before the sign-off or call to action when possible
         return quality
 
     def crosses_topic(self, i: int, j: int) -> bool:
@@ -253,7 +268,9 @@ def generate_candidates(
         if first > last:
             continue
         length = timeline.end_time(last) - timeline.start_time(first)
-        if config.floor_s <= length <= config.ceiling_s:
+        if config.floor_s <= length <= config.ceiling_s and (
+            boilerplate_share(sentences[first : last + 1]) < PURE_BOILERPLATE_SHARE
+        ):
             drafts.append(_draft(timeline, first, last, "topic_block", ()))
 
     for i in range(len(sentences)):

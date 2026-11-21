@@ -89,6 +89,7 @@ uv run pytest -k duplicate                     # tests whose name matches
 Layout:
 
 - `tests/unit/`: fast tests. They use a fake prober (`tests/conftest.py`) instead of ffprobe.
+  `tests/unit/test_scoring_quality.py` covers boilerplate penalties, affect labels and strength/weakness separation.
 - `tests/integration/`: real media generated with FFmpeg at test time
   (`tests/integration/conftest.py`), and a test that starts the Streamlit server.
 - `tests/transcription_fakes.py`: transcription test doubles: a WAV writer, a scripted speech

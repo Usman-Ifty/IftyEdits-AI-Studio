@@ -33,13 +33,16 @@ from iftyedits.core.clip_models import (
 )
 from iftyedits.core.signals import (
     STOPWORDS,
+    STRONG_CUE,
+    Boilerplate,
+    boilerplate_match,
     hook_strength,
     is_question,
     starts_with_connector,
     tokens,
 )
 
-SCORING_VERSION = 1
+SCORING_VERSION = 2
 """Bump when components, weights or penalties change, so stored scores can be recomputed."""
 
 DEFAULT_WEIGHTS: Mapping[str, float] = {
@@ -97,6 +100,11 @@ _CATEGORY_OF: Mapping[SignalKind, str] = {
 
 _WORDING_COMPONENTS = frozenset({"emotion", "surprise", "usefulness"})
 PENALTY_CAP = 30.0
+BOILERPLATE_FLOOR = 0.08
+"""Below this share of boilerplate words a passing mention costs nothing."""
+BOILERPLATE_POINTS_PER_SHARE = 45.0
+BOILERPLATE_MAX_POINTS = 25.0
+_AFFECT_CATEGORIES = frozenset({"humor", "emotional"})
 FEEDBACK_MAX_POINTS = 4.0
 FAVORITE_BONUS = 8.0
 REJECTED_PENALTY = 25.0
@@ -225,6 +233,23 @@ def _content_counter(sentences: Sequence[Sentence]) -> Counter[str]:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class _Part:
+    """One component's measurement: the value plus what was good and what was wrong.
+
+    ``detail`` is the full text shown in the breakdown. ``positive`` is its favourable part
+    (listed under Strengths) and ``issues`` its unfavourable notes (listed under Weaknesses),
+    so negative evidence never appears as a strength.
+    """
+
+    value: float
+    detail: str
+    positive: str = ""
+    issues: tuple[str, ...] = ()
+    assessed: bool = True
+    absent: bool = False
+
+
 class _Facts:
     """Measurements about one draft, shared by the components and the explanation."""
 
@@ -257,6 +282,13 @@ class _Facts:
         self.terminal_ratio = _mean([1.0 if s.terminal else 0.0 for s in self.sentences], 0.0)
         self.topic_shifts = sum(1 for s in self.signals if s.kind is SignalKind.TOPIC_SHIFT)
         self.low_conf = sum(1 for s in self.signals if s.kind is SignalKind.LOW_CONFIDENCE)
+        self.boiler: list[Boilerplate | None] = [boilerplate_match(s) for s in self.sentences]
+        weighted = sum(
+            b.strength * s.word_count
+            for b, s in zip(self.boiler, self.sentences, strict=True)
+            if b is not None
+        )
+        self.boiler_share = weighted / self.words if self.words > 0 else 0.0
 
     def has(self, *kinds: SignalKind) -> bool:
         return any(s.kind in kinds for s in self.signals)
@@ -271,8 +303,8 @@ class _Facts:
 # ------------------------------------------------------------------------- components
 
 
-def _hook(f: _Facts) -> tuple[float, str, int]:
-    """Value, detail and the index (within the clip) of the best opening line."""
+def _hook(f: _Facts) -> tuple[_Part, int]:
+    """The hook component and the index (within the clip) of the best opening line."""
     lexicon = f.evidence.lexicon_supported
     best: tuple[float, str, int] | None = None
     for position, sentence in enumerate(f.sentences[:3]):
@@ -283,50 +315,71 @@ def _hook(f: _Facts) -> tuple[float, str, int]:
         if best is None or value > best[0]:
             best = (value, f"{found[1]}", position)
     if best is not None:
-        where = "" if best[2] == 0 else f" (sentence {best[2] + 1}, so the clip opens with setup)"
-        return min(1.0, best[0]), f"Opening line {best[1]}{where}", best[2]
+        positive = f"Opening line {best[1]}"
+        if best[2] == 0:
+            return _Part(min(1.0, best[0]), positive, positive), 0
+        issue = f"the hook is sentence {best[2] + 1}, so the clip opens with setup"
+        detail = f"{positive} (sentence {best[2] + 1}, so the clip opens with setup)"
+        return _Part(min(1.0, best[0]), detail, positive, (issue,)), best[2]
     value = 0.2
     detail = "Opening line has no hook wording"
+    positive = ""
+    issues: list[str] = []
     if is_question(f.first):
         value, detail = 0.55, "Opens with a question"
+        positive = detail
     elif not starts_with_connector(f.first.text):
         value, detail = 0.3, "Opens with a plain statement"
+        positive = detail
     if starts_with_connector(f.first.text):
         value *= 0.5
-        detail += "; starts with a continuation word"
+        issues.append("starts with a continuation word")
     if f.first.word_count <= 3:
         value *= 0.7
-        detail += "; very short opening"
-    return value, detail, 0
+        issues.append("very short opening")
+    if f.boiler[0] is not None:
+        value *= 0.5
+        issues.append(f"opens on channel boilerplate ({f.boiler[0].label})")
+    if issues:
+        detail += "; " + "; ".join(issues)
+    return _Part(value, detail, positive, tuple(issues)), 0
 
 
-def _context(f: _Facts) -> tuple[float, str]:
+def _context(f: _Facts) -> _Part:
     first = f.first
     value = 0.0
-    notes: list[str] = []
+    good: list[str] = []
+    issues: list[str] = []
     if not starts_with_connector(first.text):
         value += 0.4
+        good.append("starts on a fresh thought")
     else:
-        notes.append("starts with a continuation word")
+        issues.append("starts with a continuation word")
     if first.index == 0 or first.gap_before_s >= 0.5:
         value += 0.25
+        good.append("starts after a pause")
     else:
-        notes.append("starts without a pause before it")
+        issues.append("starts without a pause before it")
     opener = tokens(first.text)[:1]
     if opener and opener[0] not in _PRONOUN_OPENERS:
         value += 0.15
+        good.append("opens on a clear subject")
     else:
-        notes.append("opens with a pronoun that points back")
+        issues.append("opens with a pronoun that points back")
     if f.has(SignalKind.QUESTION_ANSWER, SignalKind.STORY, SignalKind.QUESTION):
         value += 0.2
+        good.append("sets up a question or story")
     elif f.first.index == 0 or is_question(first):
         value += 0.1
-    return _clamp(value), (
-        "Self-contained start" if not notes else "Weak start: " + ", ".join(notes)
-    )
+    if f.boiler[0] is not None:
+        value *= 0.5
+        issues.append(f"starts with channel boilerplate ({f.boiler[0].label})")
+    detail = "Self-contained start" if not issues else "Weak start: " + ", ".join(issues)
+    positive = "Self-contained start" if not issues else ", ".join(good).capitalize()
+    return _Part(_clamp(value), detail, positive, tuple(issues))
 
 
-def _narrative(f: _Facts) -> tuple[float, str]:
+def _narrative(f: _Facts) -> _Part:
     count = len(f.sentences)
     if f.has(SignalKind.QUESTION_ANSWER):
         value, detail = 0.9, "Contains a question and its answer"
@@ -341,21 +394,28 @@ def _narrative(f: _Facts) -> tuple[float, str]:
     if f.has(SignalKind.RAPID_EXCHANGE):
         value = min(1.0, value + 0.1)
         detail += "; lively exchange"
-    return value, detail
+    return _Part(value, detail)
 
 
-def _payoff(f: _Facts) -> tuple[float, str]:
+def _payoff(f: _Facts) -> _Part:
     last = f.last
     value = 0.0
     notes: list[str] = []
+    good: list[str] = []
+    issues: list[str] = []
+
+    def note(text: str, ok: bool) -> None:
+        notes.append(text)
+        (good if ok else issues).append(text)
+
     if last.terminal:
         value += 0.35
-        notes.append("ends on a full stop")
+        note("ends on a full stop", True)
     else:
-        notes.append("ends mid-thought")
+        note("ends mid-thought", False)
     if last.gap_after_s >= 0.5 or f.draft.last_sentence + 1 >= len(f.evidence.sentences):
         value += 0.2
-        notes.append("followed by a pause")
+        note("followed by a pause", True)
     tail = f.sentences[-2:]
     tail_start = tail[0].start_s
     if any(
@@ -372,15 +432,23 @@ def _payoff(f: _Facts) -> tuple[float, str]:
         for s in f.signals
     ):
         value += 0.3
-        notes.append("a strong moment lands near the end")
+        note("a strong moment lands near the end", True)
     if not is_question(last):
         value += 0.15
     else:
-        notes.append("ends on an unanswered question")
-    return _clamp(value), ", ".join(notes).capitalize()
+        note("ends on an unanswered question", False)
+    if f.boiler[-1] is not None:
+        value *= 0.5
+        note(f"ends on channel boilerplate ({f.boiler[-1].label})", False)
+    return _Part(
+        _clamp(value),
+        ", ".join(notes).capitalize(),
+        ", ".join(good).capitalize(),
+        tuple(issues),
+    )
 
 
-def _clarity(f: _Facts) -> tuple[float, str]:
+def _clarity(f: _Facts) -> _Part:
     avg_words = f.words / len(f.sentences)
     if 6 <= avg_words <= 22:
         length_fit = 1.0
@@ -389,12 +457,14 @@ def _clarity(f: _Facts) -> tuple[float, str]:
             1.0 - (6 - avg_words) / 6 if avg_words < 6 else 1.0 - (avg_words - 22) / 20
         )
     value = 0.5 * f.terminal_ratio + 0.5 * length_fit
-    return value, f"{f.terminal_ratio:.0%} complete sentences, {avg_words:.0f} words per sentence"
+    return _Part(
+        value, f"{f.terminal_ratio:.0%} complete sentences, {avg_words:.0f} words per sentence"
+    )
 
 
-def _pacing(f: _Facts) -> tuple[float, str]:
+def _pacing(f: _Facts) -> _Part:
     if f.rate <= 0:
-        return 0.2, "No measurable speech rate"
+        return _Part(0.2, "No measurable speech rate")
     if 2.2 <= f.rate <= 3.6:
         rate_fit = 1.0
     elif f.rate < 2.2:
@@ -402,14 +472,13 @@ def _pacing(f: _Facts) -> tuple[float, str]:
     else:
         rate_fit = _clamp(1.0 - (f.rate - 3.6) / 2.4)
     dead_fit = _clamp(1.0 - 3.0 * f.dead_ratio)
-    return (
-        0.6 * rate_fit + 0.4 * dead_fit,
-        f"{f.rate:.1f} words/s, {f.dead_ratio:.0%} dead time",
+    return _Part(
+        0.6 * rate_fit + 0.4 * dead_fit, f"{f.rate:.1f} words/s, {f.dead_ratio:.0%} dead time"
     )
 
 
-def _wording(f: _Facts, *kinds: SignalKind, loud_bonus: float = 0.0) -> tuple[float, str, bool]:
-    """Strength of wording cues (and optionally loudness) with a note; third item: assessed."""
+def _wording(f: _Facts, *kinds: SignalKind, loud_bonus: float = 0.0) -> _Part:
+    """Strength of wording cues (and optionally loudness) with a note."""
     found = f.strongest(*kinds)
     count = sum(1 for s in f.signals if s.kind in kinds)
     value = 0.0
@@ -421,31 +490,32 @@ def _wording(f: _Facts, *kinds: SignalKind, loud_bonus: float = 0.0) -> tuple[fl
         value = _clamp(value + loud_bonus)
         detail += "; volume rise"
     assessed = f.evidence.lexicon_supported or (loud_bonus > 0 and f.evidence.loudness is not None)
-    return value, detail, assessed
+    absent = found is None and not (loud_bonus and f.loud_peaks())
+    return _Part(value, detail, assessed=assessed, absent=absent)
 
 
-def _duration_fit(f: _Facts) -> tuple[float, str]:
+def _duration_fit(f: _Facts) -> _Part:
     c, d = f.config, f.duration
     if c.min_s <= d <= c.max_s:
         spread = (c.target_s - c.min_s) if d < c.target_s else (c.max_s - c.target_s)
         off = abs(d - c.target_s) / spread if spread > 0 else 0.0
-        return 1.0 - 0.3 * off, f"{d:.0f}s is within {c.min_s:.0f}-{c.max_s:.0f}s"
+        return _Part(1.0 - 0.3 * off, f"{d:.0f}s is within {c.min_s:.0f}-{c.max_s:.0f}s")
     edge = c.min_s if d < c.min_s else c.max_s
     value = _clamp(0.7 - 1.5 * abs(d - edge) / edge, 0.1, 0.7)
-    return value, f"{d:.0f}s is outside the preferred {c.min_s:.0f}-{c.max_s:.0f}s"
+    return _Part(value, f"{d:.0f}s is outside the preferred {c.min_s:.0f}-{c.max_s:.0f}s")
 
 
-def _quality(f: _Facts) -> tuple[float, str]:
+def _quality(f: _Facts) -> _Part:
     low = _clamp(f.low_conf / max(1, len(f.sentences)))
     value = _clamp(f.mean_confidence * (0.6 + 0.4 * f.timed_ratio) * (1.0 - 0.5 * low))
     known = "" if f.known_confidence else " (no confidence data; assumed)"
-    return (
+    return _Part(
         value,
         f"Mean word confidence {f.mean_confidence:.0%}{known}, {f.timed_ratio:.0%} word-timed",
     )
 
 
-def _coherence(f: _Facts) -> tuple[float, str]:
+def _coherence(f: _Facts) -> _Part:
     topic = _clamp(1.0 - 0.4 * f.topic_shifts)
     half = len(f.sentences) // 2
     if half >= 2:
@@ -453,39 +523,64 @@ def _coherence(f: _Facts) -> tuple[float, str]:
             _content_counter(f.sentences[:half]), _content_counter(f.sentences[half:])
         )
         value = 0.6 * topic + 0.4 * _clamp(similarity * 2.5)
-        return value, f"{f.topic_shifts} topic change(s), halves share {similarity:.0%} vocabulary"
-    return 0.6 * topic + 0.2, f"{f.topic_shifts} topic change(s); too short to compare halves"
+        return _Part(
+            value, f"{f.topic_shifts} topic change(s), halves share {similarity:.0%} vocabulary"
+        )
+    return _Part(
+        0.6 * topic + 0.2, f"{f.topic_shifts} topic change(s); too short to compare halves"
+    )
 
 
-def _components(f: _Facts, weights: ScoringWeights) -> tuple[list[ScoreComponent], int]:
-    hook_value, hook_detail, hook_at = _hook(f)
+def _components(
+    f: _Facts, weights: ScoringWeights
+) -> tuple[list[ScoreComponent], int, dict[str, _Part]]:
+    hook_part, hook_at = _hook(f)
     wording = f.evidence.lexicon_supported
-    raw: dict[str, tuple[float, str, bool]] = {
-        "hook": (hook_value, hook_detail, True),
-        "context": (*_context(f), True),
-        "narrative": (*_narrative(f), True),
-        "payoff": (*_payoff(f), True),
-        "clarity": (*_clarity(f), True),
-        "pacing": (*_pacing(f), True),
+    raw: dict[str, _Part] = {
+        "hook": hook_part,
+        "context": _context(f),
+        "narrative": _narrative(f),
+        "payoff": _payoff(f),
+        "clarity": _clarity(f),
+        "pacing": _pacing(f),
         "emotion": _wording(f, SignalKind.EMOTIONAL_WORDING, SignalKind.HUMOR_CUE, loud_bonus=0.2),
         "surprise": _wording(f, SignalKind.SURPRISE, loud_bonus=0.25),
         "usefulness": _wording(f, SignalKind.INSIGHT, SignalKind.MOTIVATION),
-        "duration_fit": (*_duration_fit(f), True),
-        "transcript_quality": (*_quality(f), True),
-        "coherence": (*_coherence(f), True),
+        "duration_fit": _duration_fit(f),
+        "transcript_quality": _quality(f),
+        "coherence": _coherence(f),
     }
     out: list[ScoreComponent] = []
     for name in DEFAULT_WEIGHTS:
-        value, detail, assessed = raw[name]
+        part = raw[name]
         weight = weights.values[name]
-        if not assessed:
+        detail = part.detail
+        if not part.assessed:
             weight = 0.0
             detail = "Not assessed: wording cues need English text" if not wording else detail
-        out.append(ScoreComponent(name, LABELS[name], round(value, 3), weight, detail))
-    return out, hook_at
+        out.append(ScoreComponent(name, LABELS[name], round(part.value, 3), weight, detail))
+    return out, hook_at, raw
 
 
 # --------------------------------------------------------------------------- penalties
+
+
+def _boilerplate_penalty(f: _Facts) -> tuple[str, float] | None:
+    """Penalty for intro, call-to-action and sign-off wording, proportional to its share.
+
+    The share is the fraction of the clip's words that are boilerplate, weighted by cue
+    strength, so a clip that is only a "like and subscribe" costs the most while a real
+    moment with one incidental mention costs little. Position is not used.
+    """
+    if f.boiler_share < BOILERPLATE_FLOOR:
+        return None
+    labels = sorted({b.label for b in f.boiler if b is not None})
+    points = min(BOILERPLATE_MAX_POINTS, BOILERPLATE_POINTS_PER_SHARE * f.boiler_share)
+    return (
+        f"Channel boilerplate: {f.boiler_share:.0%} of the words are {' and '.join(labels)} "
+        "wording, not content",
+        points,
+    )
 
 
 def _penalties(f: _Facts) -> list[tuple[str, float]]:
@@ -533,11 +628,31 @@ _CATEGORY_WEIGHT: Mapping[str, float] = {"question_answer": 0.7}
 """A Q&A pair is one signal while wording cues repeat, so it is discounted when summing."""
 
 
+def _credible_affect(f: _Facts) -> frozenset[str]:
+    """Humor and emotional categories the clip has real evidence for.
+
+    One mild reaction word is not enough to call a whole clip funny or emotional: the clip
+    needs a strong cue (laughter marked, "oh my god", "hilarious") or two separate cues.
+    """
+    strong: set[str] = set()
+    count: Counter[str] = Counter()
+    for s in f.signals:
+        name = _CATEGORY_OF.get(s.kind)
+        if name in _AFFECT_CATEGORIES:
+            count[name] += 1
+            if float(s.evidence.get("cue_weight", 0.0)) >= STRONG_CUE:
+                strong.add(name)
+    return frozenset(strong | {name for name, n in count.items() if n >= 2})
+
+
 def _category(f: _Facts) -> str:
     """Dominant moment type: the signal kind with the largest summed strength x confidence."""
+    credible = _credible_affect(f)
     totals: dict[str, float] = {}
     for s in f.signals:
         name = _CATEGORY_OF.get(s.kind)
+        if name in _AFFECT_CATEGORIES and name not in credible:
+            continue
         if name is not None:
             totals[name] = totals.get(name, 0.0) + s.strength * s.confidence * _CATEGORY_WEIGHT.get(
                 name, 1.0
@@ -572,15 +687,29 @@ def score_draft(
     """Score one draft. Deterministic: same evidence, draft, config and weights, same result."""
     weights = weights or ScoringWeights()
     facts = _Facts(evidence, draft, config)
-    components, hook_at = _components(facts, weights)
+    components, hook_at, parts = _components(facts, weights)
     total_weight = sum(c.weight for c in components)
     base = 100.0 * sum(c.value * c.weight for c in components) / total_weight
-    penalties = _penalties(facts)
+    boilerplate = _boilerplate_penalty(facts)
+    penalties = ([boilerplate] if boilerplate else []) + _penalties(facts)
     penalty_points = min(PENALTY_CAP, sum(points for _, points in penalties))
     category = _category(facts)
-    strengths = [f"{c.label}: {c.detail}" for c in components if c.weight > 0 and c.value >= 0.7]
-    weaknesses = [f"{c.label}: {c.detail}" for c in components if c.weight > 0 and c.value < 0.4]
-    weaknesses += [reason for reason, _ in penalties]
+    strengths: list[str] = []
+    weaknesses = [reason for reason, _ in penalties]
+    for c in components:
+        if c.weight <= 0:
+            continue
+        part = parts[c.name]
+        if c.value >= 0.7:
+            text = part.positive or ("" if part.issues else part.detail)
+            if text:
+                strengths.append(f"{c.label}: {text}")
+        if part.absent:
+            continue  # no cue is the absence of a plus, not a defect
+        if c.value < 0.4:
+            weaknesses.append(f"{c.label}: {part.detail}")
+        else:
+            weaknesses.extend(f"{c.label}: {issue}" for issue in part.issues)
 
     adjustment = 0.0
     span = (draft.start_s, draft.end_s)
@@ -632,6 +761,20 @@ def score_draft(
             "loudness_peaks": facts.loud_peaks(),
             "base_score": round(base, 2),
             "penalties": [{"reason": r, "points": round(p, 2)} for r, p in penalties],
+            "boilerplate": {
+                "share": round(facts.boiler_share, 3),
+                "points": round(boilerplate[1], 2) if boilerplate else 0.0,
+                "sentences": [
+                    {
+                        "sentence": s.index,
+                        "kind": b.kind,
+                        "phrases": list(b.phrases),
+                        "text": _trim(s.text.strip(), 120),
+                    }
+                    for b, s in zip(facts.boiler, facts.sentences, strict=True)
+                    if b is not None
+                ],
+            },
             "penalty_points": round(penalty_points, 2),
             "feedback_points": round(adjustment, 2),
             "scoring_version": SCORING_VERSION,

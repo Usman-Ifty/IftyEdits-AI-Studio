@@ -37,7 +37,7 @@ from iftyedits.core.clip_models import (
 )
 from iftyedits.core.models import TranscriptWord
 
-SIGNALS_VERSION = 1
+SIGNALS_VERSION = 2
 """Bump when detection rules change, so stored analyses are not reused."""
 
 MAX_SENTENCE_S = 30.0
@@ -102,7 +102,7 @@ EMOTION: Lexicon = (
     ("insane", 0.8), ("amazing", 0.6), ("incredible", 0.7), ("unbelievable", 0.8),
     ("awesome", 0.5), ("terrible", 0.7), ("horrible", 0.7), ("heartbreaking", 1.0),
     ("cried", 1.0), ("crying", 1.0), ("angry", 0.8), ("furious", 1.0), ("excited", 0.6),
-    ("obsessed", 0.7), ("disgusting", 0.8), ("nightmare", 0.8), ("wow", 0.6),
+    ("obsessed", 0.7), ("disgusting", 0.6), ("nightmare", 0.8), ("wow", 0.6),
     ("oh my god", 1.0), ("oh my gosh", 1.0), ("omg", 0.8), ("holy", 0.5),
     ("so happy", 0.8), ("so sad", 0.8), ("proud", 0.6), ("embarrassing", 0.8),
     ("painful", 0.7), ("freaking", 0.4), ("badass", 0.6),
@@ -164,6 +164,68 @@ STOPWORDS = frozenset({
 })  # fmt: skip
 LEXICON_LANGUAGES = frozenset({"en"})
 
+CALL_TO_ACTION: Lexicon = (
+    ("subscribe", 1.0), ("like and subscribe", 1.0), ("hit the like", 1.0),
+    ("smash the like", 1.0), ("hit like", 0.9), ("click like", 1.0), ("click the like", 1.0),
+    ("give it a like", 1.0), ("leave a like", 1.0), ("drop a like", 1.0), ("thumbs up", 0.9),
+    ("hit the bell", 1.0), ("bell icon", 1.0), ("notification bell", 1.0),
+    ("turn on notifications", 1.0), ("enable notifications", 1.0), ("notifications", 0.6),
+    ("leave a comment", 0.9), ("leave us a comment", 0.9), ("comment below", 0.9),
+    ("comments below", 0.9),
+    ("down in the comments", 0.9), ("let me know in the comments", 1.0),
+    ("link in the description", 1.0), ("links in the description", 1.0),
+    ("link below", 0.9), ("links below", 0.9), ("in the description", 0.6),
+    ("if you liked this video", 1.0), ("if you like this video", 1.0),
+    ("if you enjoyed this video", 1.0), ("if you enjoyed the video", 1.0),
+    ("like this video", 0.8), ("share this video", 1.0), ("my channel", 0.8),
+    ("our channel", 0.8), ("this channel", 0.7), ("the channel", 0.4), ("follow me", 0.7),
+    ("patreon", 0.9), ("sponsored by", 0.9), ("new videos every", 0.8), ("check out", 0.4),
+    ("don't forget to", 0.5),
+)  # fmt: skip
+INTRO_WORDING: Lexicon = (
+    ("welcome back", 0.9), ("welcome to", 0.5), ("hey guys", 0.9), ("hey folks", 0.9),
+    ("hey everyone", 0.9), ("hey everybody", 0.9), ("hi everyone", 0.9), ("hi guys", 0.9),
+    ("hello everyone", 0.9), ("hello guys", 0.9), ("what's up guys", 1.0),
+    ("what's up everyone", 1.0), ("in this video", 0.65), ("in today's video", 1.0),
+    ("today's video", 0.8), ("my name is", 0.8), ("before we get started", 0.9),
+    ("before we get into it", 0.9), ("without further ado", 1.0), ("let's jump right in", 0.7),
+    ("let's dive in", 0.7), ("let's get into it", 0.5),
+)  # fmt: skip
+OUTRO_WORDING: Lexicon = (
+    ("thanks for watching", 1.0), ("thank you for watching", 1.0),
+    ("thank you very much for watching", 1.0), ("for watching this video", 0.9),
+    ("thanks for tuning in", 1.0), ("thanks for listening", 1.0),
+    ("see you in the next", 1.0), ("see you next time", 1.0), ("see you guys", 0.8),
+    ("see you later", 0.8), ("until next time", 0.9), ("that's it for this video", 1.0),
+    ("that's all for this video", 1.0), ("that's all for today", 1.0),
+    ("that's it for today", 1.0), ("catch you in the next", 1.0), ("catch you later", 0.8),
+    ("peace out", 0.9), ("goodbye", 0.6), ("bye bye", 0.8), ("stay tuned", 0.8),
+    ("before you go", 0.8), ("take care", 0.5), ("see you", 0.4),
+)  # fmt: skip
+BOILERPLATE: tuple[tuple[str, str, Lexicon], ...] = (
+    ("call_to_action", "call to action", CALL_TO_ACTION),
+    ("intro", "channel intro", INTRO_WORDING),
+    ("outro", "sign-off", OUTRO_WORDING),
+)
+BOILERPLATE_MIN = 0.6
+"""A sentence is channel boilerplate when its best cue reaches this strength."""
+BOILERPLATE_MAX_WORDS = 25
+"""Longer sentences are content with a passing mention, never boilerplate."""
+STRONG_CUE = 0.8
+"""An emotional or humor cue this strong stands alone; weaker ones need support."""
+REACTION_MAX_WORDS = 9
+_REACTION_OPENERS = frozenset(
+    {"i", "i'm", "we", "it", "it's", "that", "that's", "this", "so", "wow", "oh"}
+)
+_NEGATORS = frozenset(
+    {"not", "no", "never", "isn't", "wasn't", "aren't", "weren't", "don't", "didn't",
+     "doesn't", "wouldn't", "hardly", "barely", "nothing"}
+)  # fmt: skip
+_BLOCKED_AFTER: dict[str, frozenset[str]] = {
+    "guess what": frozenset({"i", "you", "we", "they", "to", "can", "would", "could"}),
+}
+"""Words that, directly before a phrase, show it is used literally ("i guess what...")."""
+
 
 def normalise(text: str) -> str:
     """Lower-case text with straight apostrophes, for matching."""
@@ -186,10 +248,75 @@ def starts_with_connector(text: str) -> bool:
     return first_word(text) in CONNECTOR_STARTS
 
 
+def _occurrences(words: Sequence[str], phrase: str) -> list[int]:
+    target = phrase.split()
+    size = len(target)
+    return [i for i in range(len(words) - size + 1) if list(words[i : i + size]) == target]
+
+
 def match_lexicon(text: str, lexicon: Lexicon) -> list[tuple[str, float]]:
     """Phrases of ``lexicon`` found in ``text`` as whole words."""
-    padded = " " + " ".join(tokens(text)) + " "
-    return [(phrase, weight) for phrase, weight in lexicon if f" {phrase} " in padded]
+    words = tokens(text)
+    padded = " " + " ".join(words) + " "
+    found: list[tuple[str, float]] = []
+    for phrase, weight in lexicon:
+        if f" {phrase} " not in padded:
+            continue
+        blocked = _BLOCKED_AFTER.get(phrase)
+        if blocked and all(i > 0 and words[i - 1] in blocked for i in _occurrences(words, phrase)):
+            continue
+        found.append((phrase, weight))
+    return found
+
+
+def is_negated(text: str, phrase: str) -> bool:
+    """True when every use of ``phrase`` follows a negation ("not funny", "isn't that scary")."""
+    words = tokens(text)
+    spots = _occurrences(words, phrase)
+    return bool(spots) and all(any(w in _NEGATORS for w in words[max(0, i - 3) : i]) for i in spots)
+
+
+@dataclass(frozen=True, slots=True)
+class Boilerplate:
+    """Channel boilerplate found in a sentence: a call to action, an intro or a sign-off."""
+
+    kind: str
+    label: str
+    strength: float
+    phrases: tuple[str, ...]
+
+
+def boilerplate_match(sentence: Sentence) -> Boilerplate | None:
+    """Channel boilerplate in one sentence, or None when it reads as content.
+
+    Only English wording is recognised. A short line with a strong cue ("like and
+    subscribe", "welcome back", "thanks for watching") is boilerplate; one weak cue or a long
+    sentence that merely mentions the channel is not.
+    """
+    if sentence.word_count > BOILERPLATE_MAX_WORDS:
+        return None
+    best: Boilerplate | None = None
+    for kind, label, lexicon in BOILERPLATE:
+        matched = match_lexicon(sentence.text, lexicon)
+        if not matched:
+            continue
+        strength = min(1.0, max(w for _, w in matched) + 0.15 * (len(matched) - 1))
+        if strength >= BOILERPLATE_MIN and (best is None or strength > best.strength):
+            best = Boilerplate(kind, label, round(strength, 3), tuple(p for p, _ in matched))
+    return best
+
+
+def boilerplate_share(sentences: Sequence[Sentence]) -> float:
+    """Share of the words that are channel boilerplate (0 to 1), weighted by cue strength."""
+    words = sum(s.word_count for s in sentences)
+    if words <= 0:
+        return 0.0
+    weighted = 0.0
+    for s in sentences:
+        found = boilerplate_match(s)
+        if found is not None:
+            weighted += found.strength * s.word_count
+    return weighted / words
 
 
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
@@ -361,6 +488,8 @@ def hook_strength(sentence: Sentence, lexicon_supported: bool) -> tuple[float, s
     """How well a sentence works as an opening line, with the reason; None if it does not."""
     if sentence.word_count > 22 or starts_with_connector(sentence.text):
         return None
+    if lexicon_supported and boilerplate_match(sentence) is not None:
+        return None  # "if you liked this video..." opens with a hook phrase but sells the channel
     if lexicon_supported:
         lowered = " ".join(tokens(sentence.text))
         for phrase in HOOK_STARTS:
@@ -387,16 +516,44 @@ _WORDING: tuple[tuple[SignalKind, Lexicon], ...] = (
 )
 
 
+def _affect_cues(s: Sentence, kind: SignalKind, lexicon: Lexicon) -> list[tuple[str, float]]:
+    """Emotional or humor cues in a sentence, only when they read as an actual reaction.
+
+    Ordinary narration uses these words descriptively ("a funny game mechanic", "crazy zany
+    NPCs", a song title). A cue counts when it is strong (laughter marked, "oh my god"), when
+    two cues support each other, when the line is exclaimed, or when it is a short first-person
+    or "it's/that's" reaction ("That's crazy."). Negated cues ("not funny") never count.
+    """
+    matched = [(p, w) for p, w in match_lexicon(s.text, lexicon) if not is_negated(s.text, p)]
+    if kind is SignalKind.HUMOR_CUE and _LAUGH_MARK_RE.search(s.text):
+        matched.append(("laughter marked in transcript", 1.0))
+    if not matched:
+        return []
+    lively = "!" in s.text
+    reaction = s.word_count <= REACTION_MAX_WORDS and first_word(s.text) in _REACTION_OPENERS
+    strong = any(w >= STRONG_CUE for _, w in matched)
+    if not (strong or len(matched) >= 2 or lively or reaction):
+        return []
+    if kind is SignalKind.EMOTIONAL_WORDING and lively:
+        matched.append(("exclamation mark", 0.4))
+    return matched
+
+
 def wording_signals(sentences: Sequence[Sentence]) -> list[ContentSignal]:
-    """English wording cues per sentence (stories, emotional words, humor, surprise...)."""
+    """English wording cues per sentence (stories, emotional words, humor, surprise...).
+
+    Channel boilerplate ("if you love this video, subscribe") is skipped: its words are
+    promotion, not a reaction. Emotional and humor cues must also pass ``_affect_cues``.
+    """
     found: list[ContentSignal] = []
     for s in sentences:
+        if boilerplate_match(s) is not None:
+            continue
         for kind, lexicon in _WORDING:
-            matched = match_lexicon(s.text, lexicon)
-            if kind is SignalKind.HUMOR_CUE and _LAUGH_MARK_RE.search(s.text):
-                matched.append(("laughter marked in transcript", 1.0))
-            if kind is SignalKind.EMOTIONAL_WORDING and s.text.count("!") >= 1:
-                matched.append(("exclamation mark", 0.4))
+            if kind in (SignalKind.EMOTIONAL_WORDING, SignalKind.HUMOR_CUE):
+                matched = _affect_cues(s, kind, lexicon)
+            else:
+                matched = match_lexicon(s.text, lexicon)
             total = sum(weight for _, weight in matched)
             if total < 0.5:
                 continue
@@ -408,6 +565,7 @@ def wording_signals(sentences: Sequence[Sentence]) -> list[ContentSignal]:
                     0.35 + 0.25 * min(total, 2.6),
                     _confidence(s) * LEXICON_CONFIDENCE,
                     matched=[phrase for phrase, _ in matched],
+                    cue_weight=round(total, 2),
                     sentence=s.index,
                     text=_snippet(s.text),
                 )
@@ -419,7 +577,7 @@ def question_signals(sentences: Sequence[Sentence]) -> list[ContentSignal]:
     """Questions, and question-then-answer exchanges."""
     found: list[ContentSignal] = []
     for i, s in enumerate(sentences):
-        if not is_question(s):
+        if not is_question(s) or boilerplate_match(s) is not None:
             continue
         wh = first_word(s.text) in WH_WORDS
         found.append(
@@ -502,7 +660,7 @@ def rapid_exchange_signals(sentences: Sequence[Sentence]) -> list[ContentSignal]
             j += 1
         short = run[0].duration_s <= 2.5 and run[0].word_count <= 8
         lively = any(is_question(s) or "!" in s.text for s in run)
-        if short and len(run) >= 4 and lively:
+        if short and len(run) >= 4 and lively and boilerplate_share(run) < 0.5:
             found.append(
                 _signal(
                     SignalKind.RAPID_EXCHANGE,
