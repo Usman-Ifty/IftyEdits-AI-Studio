@@ -479,7 +479,8 @@ after that.
 
 - [x] 2A content signals: sentence rebuilding, transcript, audio and scene signals, with
   unit and FFmpeg tests.
-- [ ] 2B candidate generation
+- [x] 2B candidate generation: anchor, topic-block and thought-start proposals with
+  sentence-aligned, scene-snapped boundaries and duplicate merging.
 - [ ] 2C scoring and ranking
 - [ ] Persistence, job, worker, CLI and Clips page
 - [ ] Documentation and verification
