@@ -481,6 +481,6 @@ after that.
   unit and FFmpeg tests.
 - [x] 2B candidate generation: anchor, topic-block and thought-start proposals with
   sentence-aligned, scene-snapped boundaries and duplicate merging.
-- [ ] 2C scoring and ranking
+- [x] 2C scoring and ranking (core engine `core/scoring.py`; persistence, job and UI pending)
 - [ ] Persistence, job, worker, CLI and Clips page
 - [ ] Documentation and verification
