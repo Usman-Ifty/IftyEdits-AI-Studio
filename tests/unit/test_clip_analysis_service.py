@@ -18,7 +18,7 @@ from iftyedits.core.errors import (
     JobCancelledError,
     JobOwnershipError,
 )
-from iftyedits.core.models import ArtifactKind, Stage, StageStatus, TranscriptSegment, Video
+from iftyedits.core.models import ArtifactKind, Video
 from iftyedits.core.protocols import CancelToken
 from iftyedits.core.scoring import SCORING_VERSION, RankingConfig
 from iftyedits.pipeline.jobs import JobQueue
@@ -31,9 +31,10 @@ from iftyedits.services.ingest import IngestService
 from iftyedits.storage.clips import ClipRepository
 from iftyedits.storage.originals import sha256_file
 from iftyedits.storage.processing import ProcessingRepository
-from iftyedits.storage.transcripts import NewTranscript, TranscriptRepository
+from iftyedits.storage.transcripts import TranscriptRepository
 from iftyedits.storage.videos import VideoRepository
-from tests.clip_fakes import cuts, podcast, write_levels_wav
+from tests.clip_db_fakes import add_artifact, prepare_media, save_transcript
+from tests.clip_fakes import cuts, podcast
 from tests.conftest import MakeMedia
 
 
@@ -68,71 +69,6 @@ def video(ingest: IngestService, make_media: MakeMedia) -> Video:
 @pytest.fixture
 def scenes() -> FakeScenes:
     return FakeScenes(cuts(30.0, 95.0))
-
-
-def save_transcript(
-    conn: sqlite3.Connection,
-    video: Video,
-    segments: Sequence[TranscriptSegment],
-    *,
-    language: str | None = "en",
-    params_hash: str = "t1",
-) -> int:
-    duration = segments[-1].end_s + 2 if segments else 5.0
-    return (
-        TranscriptRepository(conn)
-        .save(
-            NewTranscript(
-                video_id=video.id,
-                audio_sha256="b" * 64,
-                engine="fake",
-                engine_version="1",
-                model="small",
-                model_revision="r",
-                device="cpu",
-                compute_type="int8",
-                language_requested=None,
-                language=language,
-                language_probability=0.95,
-                duration_s=duration,
-                params_hash=params_hash,
-                params={},
-                segments=tuple(segments),
-            )
-        )
-        .id
-    )
-
-
-def add_artifact(
-    settings: Settings, conn: sqlite3.Connection, video: Video, kind: ArtifactKind, path: Path
-) -> None:
-    processing = ProcessingRepository(conn)
-    stage = Stage.AUDIO if kind is ArtifactKind.AUDIO_WAV else Stage.PROXY
-    record = processing.start_stage(video.id, stage, params_hash="a", params={})
-    processing.register_artifact(
-        video_id=video.id,
-        stage_id=record.id,
-        kind=kind,
-        relpath=path.relative_to(settings.derived_dir.resolve()).as_posix(),
-        size_bytes=path.stat().st_size,
-        sha256=sha256_file(path),
-        params_hash="a",
-        metadata={},
-    )
-    processing.finish_stage(record.id, StageStatus.SUCCEEDED)
-
-
-def prepare_media(settings: Settings, conn: sqlite3.Connection, video: Video) -> tuple[Path, Path]:
-    root = settings.derived_dir.resolve() / f"v{video.id}"
-    audio = write_levels_wav(
-        root / "audio.wav", [(20.0, 0.1), (3.0, 0.0), (7.0, 0.7), (200.0, 0.1)], rate=2000
-    )
-    proxy = root / "proxy.mp4"
-    proxy.write_bytes(b"proxy bytes")
-    add_artifact(settings, conn, video, ArtifactKind.AUDIO_WAV, audio)
-    add_artifact(settings, conn, video, ArtifactKind.PROXY_MP4, proxy)
-    return audio, proxy
 
 
 @pytest.fixture

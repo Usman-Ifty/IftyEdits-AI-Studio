@@ -28,6 +28,7 @@ IMPORT_FILE = "import_file"
 PROCESS_VIDEO = "process_video"
 TRANSCRIBE_VIDEO = "transcribe_video"
 DOWNLOAD_MODEL = "download_model"
+ANALYZE_CLIPS = "analyze_clips"
 ACTIVE_STATUSES = (JobStatus.QUEUED.value, JobStatus.RUNNING.value)
 CANCELLED_MESSAGE = "Cancelled by user"
 _COLUMNS = (
@@ -141,6 +142,17 @@ class JobQueue:
             payload = {"video_id": video_id, "model": model, "language": language, "force": force}
             return self._insert(TRANSCRIBE_VIDEO, payload), True
 
+    def enqueue_clip_analysis(self, video_id: int, *, force: bool = False) -> tuple[int, bool]:
+        """Queue clip analysis of a video; reuses an active analysis job of the same video.
+
+        Returns ``(job_id, created)``.
+        """
+        with transaction(self.conn):
+            existing = self._active(ANALYZE_CLIPS, "video_id", video_id)
+            if existing is not None:
+                return existing, False
+            return self._insert(ANALYZE_CLIPS, {"video_id": video_id, "force": force}), True
+
     def enqueue_model_download(self, model: str) -> tuple[int, bool]:
         """Queue a speech-model download; reuses an active download of the same model."""
         with transaction(self.conn):
@@ -205,6 +217,11 @@ class JobQueue:
     def active_transcription(self, video_id: int) -> Job | None:
         """The queued or running transcription job for a video, if any."""
         job_id = self._active(TRANSCRIBE_VIDEO, "video_id", video_id)
+        return self.get(job_id) if job_id is not None else None
+
+    def active_clip_analysis(self, video_id: int) -> Job | None:
+        """The queued or running clip analysis job for a video, if any."""
+        job_id = self._active(ANALYZE_CLIPS, "video_id", video_id)
         return self.get(job_id) if job_id is not None else None
 
     def active_download(self, model: str) -> Job | None:

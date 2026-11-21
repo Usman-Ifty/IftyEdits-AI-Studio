@@ -22,6 +22,7 @@ from iftyedits.adapters.faster_whisper import FasterWhisperTranscriber
 from iftyedits.adapters.ffmpeg import FFmpeg
 from iftyedits.adapters.ffprobe import FFprobe
 from iftyedits.adapters.model_store import build_model_store
+from iftyedits.adapters.scenes import FFmpegSceneDetector
 from iftyedits.config import Settings
 from iftyedits.core.errors import (
     IftyEditsError,
@@ -29,24 +30,29 @@ from iftyedits.core.errors import (
     JobCancelledError,
     JobOwnershipError,
 )
-from iftyedits.core.models import ALL_STAGES, Job, Stage
+from iftyedits.core.models import ALL_STAGES, Artifact, Job, Stage
 from iftyedits.core.protocols import (
     MediaProber,
     MediaTranscoder,
+    SceneDetector,
     SpeechModelStore,
     SpeechTranscriber,
 )
 from iftyedits.pipeline.jobs import (
+    ANALYZE_CLIPS,
     DOWNLOAD_MODEL,
     IMPORT_FILE,
     PROCESS_VIDEO,
     TRANSCRIBE_VIDEO,
     JobQueue,
 )
+from iftyedits.services.clip_analysis import ClipAnalysisService
 from iftyedits.services.ingest import IngestService, build_vault
 from iftyedits.services.media_prep import MediaPrepService, clean_partials
 from iftyedits.services.transcription import TranscriptionService, options_from_settings
+from iftyedits.storage.clips import ClipRepository
 from iftyedits.storage.db import open_database
+from iftyedits.storage.originals import assert_safe_output_path
 from iftyedits.storage.processing import ProcessingRepository
 from iftyedits.storage.transcripts import TranscriptRepository
 from iftyedits.storage.videos import VideoRepository
@@ -119,6 +125,7 @@ class Worker:
         self.models = model_store_factory(settings)
         self._media: MediaPrepService | None = None
         self._transcription: TranscriptionService | None = None
+        self._clips: ClipAnalysisService | None = None
         self.ingest = IngestService(
             settings, VideoRepository(self.conn), self.prober, build_vault(settings)
         )
@@ -148,6 +155,39 @@ class Worker:
                 self.media,
             )
         return self._transcription
+
+    def clips(self) -> ClipAnalysisService:
+        """Clip analysis service, created on first use (FFmpeg is only needed for scenes)."""
+        if self._clips is None:
+            settings = self.settings
+
+            def safe(path: Path) -> Path:
+                return assert_safe_output_path(
+                    path,
+                    originals_root=settings.originals_dir,
+                    allowed_roots=(settings.derived_dir,),
+                )
+
+            def resolve(artifact: Artifact) -> Path:
+                return safe(settings.derived_dir / artifact.relpath)
+
+            def scene_detector() -> SceneDetector:
+                return FFmpegSceneDetector(
+                    self.transcoder_factory(settings),
+                    settings.derived_dir / ".clip_analysis_work",
+                    safe,
+                )
+
+            self._clips = ClipAnalysisService(
+                settings,
+                VideoRepository(self.conn),
+                self.processing,
+                TranscriptRepository(self.conn),
+                ClipRepository(self.conn),
+                resolve,
+                scene_detector,
+            )
+        return self._clips
 
     def run(self, stop: threading.Event | None = None, *, once: bool = False) -> int:
         """Process jobs until ``stop`` is set (or the queue is empty with ``once``)."""
@@ -231,6 +271,8 @@ class Worker:
             return self._process(job, progress)
         if job.kind == TRANSCRIBE_VIDEO:
             return self._transcribe(job, progress)
+        if job.kind == ANALYZE_CLIPS:
+            return self._analyze_clips(job, progress)
         if job.kind == DOWNLOAD_MODEL:
             return self._download_model(job, progress)
         raise IftyEditsError(f"Unknown job kind: {job.kind}")
@@ -301,6 +343,26 @@ class Worker:
         report = self.transcription().transcribe(
             video_id,
             options,
+            force=bool(job.payload.get("force", False)),
+            job_id=job.id,
+            worker_id=self.worker_id,
+            progress=on_progress,
+            cancel=progress.cancel,
+        )
+        return report.as_result(), report.summary()
+
+    def _analyze_clips(self, job: Job, progress: _Progress) -> tuple[dict[str, Any], str]:
+        video_id = job.video_id
+        if video_id is None:
+            raise IftyEditsError("Clip analysis job has no video_id")
+        progress.message = "Analysing clips"
+
+        def on_progress(fraction: float, message: str) -> None:
+            progress.fraction = fraction
+            progress.message = message
+
+        report = self.clips().analyze(
+            video_id,
             force=bool(job.payload.get("force", False)),
             job_id=job.id,
             worker_id=self.worker_id,
