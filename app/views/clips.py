@@ -232,6 +232,10 @@ with st.expander("Evidence signals"):
         st.caption("No signals fall inside this clip.")
     st.caption(f"Built by: {', '.join(picked.methods)}. Id {picked.key}.")
 
+if st.button("Edit as a Short", key=f"edit-{picked.id}", type="primary"):
+    st.session_state["editor-target"] = (video.id, picked.key)
+    st.switch_page("views/editor.py")
+
 b1, b2, b3 = st.columns(3)
 if b1.button(
     "★ Favorite", key=f"fav-{picked.id}", disabled=picked.decision is ClipDecision.FAVORITE

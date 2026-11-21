@@ -325,6 +325,7 @@ def framed_still(
     style: CaptionStyle,
     *,
     out_height: int = 960,
+    active_word: int | None = None,
 ) -> Image.Image:
     """What the Short looks like at this frame: cropped, scaled, with the caption drawn on."""
     sx = frame.width / crop.source_w
@@ -339,7 +340,7 @@ def framed_still(
     out_w -= out_w % 2
     picture = frame.convert("RGB").crop(box).resize((out_w, out_height), Image.Resampling.LANCZOS)
     if cue is not None and style.enabled:
-        overlay, _ = render_cue(cue, style, (out_w, out_height))
+        overlay, _ = render_cue(cue, style, (out_w, out_height), active_word=active_word)
         picture = Image.alpha_composite(picture.convert("RGBA"), overlay).convert("RGB")
     return picture
 

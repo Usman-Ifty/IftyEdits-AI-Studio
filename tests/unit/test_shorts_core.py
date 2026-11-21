@@ -281,3 +281,12 @@ def test_caption_position_is_clamped_into_the_safe_area() -> None:
     assert CaptionStyle(position=-1.0).validate().position == SAFE_TOP
     with pytest.raises(ShortConfigError):
         CaptionStyle(position=float("nan")).validate()
+
+
+def test_ui_labels_cover_every_preset_size_and_quality() -> None:
+    from iftyedits.core.shorts import CAPTION_PRESETS, OUTPUT_SIZES, QUALITY_CRF
+    from iftyedits.ui.shorts import CAPTION_PRESET_LABELS, QUALITY_LABELS, SIZE_LABELS
+
+    assert set(CAPTION_PRESET_LABELS) == set(CAPTION_PRESETS)
+    assert set(SIZE_LABELS) == set(OUTPUT_SIZES)
+    assert set(QUALITY_LABELS) == set(QUALITY_CRF)

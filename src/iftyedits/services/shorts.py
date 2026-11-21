@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from iftyedits.adapters.ffmpeg import SOFTWARE_H264
+from iftyedits.adapters.ffmpeg import SOFTWARE_H264, FFmpeg
 from iftyedits.adapters.short_render import (
     CaptionAssets,
     EncodeChoice,
@@ -162,6 +162,24 @@ def claim_unique_path(partial: Path, directory: Path, stem: str, suffix: str = "
         partial.unlink()
         return target
     raise ShortRenderError("Could not find a free export file name")
+
+
+def build_short_service(settings: Settings, conn: sqlite3.Connection) -> ShortService:
+    """A service wired to the real FFmpeg and ffprobe, for the editor page and the CLI."""
+    from iftyedits.adapters.ffprobe import FFprobe
+
+    return ShortService(
+        settings,
+        VideoRepository(conn),
+        TranscriptRepository(conn),
+        ClipRepository(conn),
+        ShortRepository(conn),
+        JobQueue(conn),
+        FFprobe(settings.ffprobe_path, settings.probe_timeout_s),
+        lambda: FFmpeg(
+            settings.ffmpeg_path, settings.ffmpeg_timeout_s, encoder=settings.export_encoder
+        ),
+    )
 
 
 class ShortService:
