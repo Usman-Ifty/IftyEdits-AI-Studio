@@ -359,10 +359,11 @@ def _find_candidate(repo: ClipRepository, video_id: int, reference: str) -> Clip
         raise IftyEditsError(f"Video #{video_id} has no clip analysis yet")
     candidates = repo.candidates(analysis.id)
     ref = reference.strip().lower()
-    if ref.isdigit():
+    matches: list[ClipCandidate] = []
+    if len(ref) >= 4:
+        matches = [c for c in candidates if c.key.startswith(ref)]
+    if not matches and ref.isdigit():  # a short number is a rank; keys can also be all digits
         matches = [c for c in candidates if c.rank == int(ref)]
-    else:
-        matches = [c for c in candidates if c.key.startswith(ref)] if len(ref) >= 4 else []
     if len(matches) != 1:
         raise IftyEditsError(
             f"No unique suggestion matches {reference!r}; use a rank (1-{len(candidates)}) "
@@ -654,11 +655,24 @@ def cmd_ui(settings: Settings, args: argparse.Namespace) -> int:
         "--browser.gatherUsageStats",
         "false",
     ]
+    server: subprocess.Popen[bytes] | None = None
+
+    def _stop(_signum: int, _frame: object) -> None:
+        raise KeyboardInterrupt  # SIGTERM shuts the children down like Ctrl+C
+
+    signal.signal(signal.SIGTERM, _stop)
     try:
-        return subprocess.call(ui_args, env=env, cwd=home)  # noqa: S603 - fixed argv
+        server = subprocess.Popen(ui_args, env=env, cwd=home)  # noqa: S603 - fixed argv
+        return server.wait()
     except KeyboardInterrupt:
         return EXIT_OK
     finally:
+        if server is not None and server.poll() is None:
+            server.terminate()
+            try:
+                server.wait(timeout=20)
+            except subprocess.TimeoutExpired:
+                server.kill()
         if worker is not None:
             worker.terminate()
             try:

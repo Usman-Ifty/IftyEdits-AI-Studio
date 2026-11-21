@@ -116,3 +116,20 @@ def test_favorite_reject_clear_persist(
 def test_check_mentions_clip_scoring(cli_env: Settings, capsys: pytest.CaptureFixture[str]) -> None:
     cli.main(["check"])
     assert "algorithmic scoring" in capsys.readouterr().out
+
+
+def test_all_digit_key_prefix_is_a_key_not_a_rank(analysed: Video, cli_env: Settings) -> None:
+    """Regression: a key that starts with six digits used to be read as a rank."""
+    with closing(open_database(cli_env.db_path)) as conn:
+        repo = ClipRepository(conn)
+        analysis = repo.current(analysed.id)
+        assert analysis is not None
+        first = repo.candidates(analysis.id)[0]
+        conn.execute(
+            "UPDATE clip_candidates SET candidate_key = ? WHERE id = ?",
+            ("123456" + first.key[6:], first.id),
+        )
+        conn.commit()
+        found = cli._find_candidate(repo, analysed.id, "123456")
+        assert found.id == first.id
+        assert cli._find_candidate(repo, analysed.id, "2").rank == 2
