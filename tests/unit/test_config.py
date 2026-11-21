@@ -46,3 +46,29 @@ def test_processing_settings(tmp_path: Path) -> None:
     for name, value in (("PROXY_ENCODER", "nvenc"), ("FFMPEG_TIMEOUT_S", "0")):
         with pytest.raises(ValueError):
             Settings.from_env({f"IFTYEDITS_{name}": value}, base_dir=tmp_path)
+
+
+def test_clip_settings_defaults_and_overrides(tmp_path: Path) -> None:
+    s = Settings.from_env({}, base_dir=tmp_path)
+    assert (s.clip_min_s, s.clip_target_s, s.clip_max_s) == (15.0, 40.0, 60.0)
+    assert s.clip_max_candidates == 20 and s.clip_use_audio and s.clip_use_scenes
+    s = Settings.from_env(
+        {"IFTYEDITS_CLIP_MIN_S": "10", "IFTYEDITS_CLIP_USE_SCENES": "false"}, base_dir=tmp_path
+    )
+    assert s.clip_min_s == 10.0 and not s.clip_use_scenes
+
+
+@pytest.mark.parametrize(
+    "env",
+    [
+        {"IFTYEDITS_CLIP_MIN_S": "50"},  # above the default target
+        {"IFTYEDITS_CLIP_MAX_S": "20"},  # below the default target
+        {"IFTYEDITS_CLIP_MIN_S": "0"},
+        {"IFTYEDITS_CLIP_MAX_OVERLAP": "1.5"},
+        {"IFTYEDITS_CLIP_MAX_CANDIDATES": "0"},
+        {"IFTYEDITS_CLIP_SCENE_THRESHOLD": "0.99"},
+    ],
+)
+def test_invalid_clip_settings_are_refused(tmp_path: Path, env: dict[str, str]) -> None:
+    with pytest.raises(ValueError, match=r"clip|greater|less|validation"):
+        Settings.from_env(env, base_dir=tmp_path)

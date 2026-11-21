@@ -13,6 +13,7 @@ from pathlib import Path
 
 from iftyedits.core.clip_models import SceneCut
 from iftyedits.core.models import TranscriptSegment, TranscriptWord
+from iftyedits.storage.clips import NewAnalysis
 
 
 def line_segment(
@@ -127,3 +128,46 @@ def write_levels_wav(
 def cuts(*times: float, score: float = 0.6) -> tuple[SceneCut, ...]:
     """Scene cuts at ``times``."""
     return tuple(SceneCut(t, score) for t in times)
+
+
+def new_analysis(
+    video_sha: str,
+    video_id: int,
+    transcript_id: int,
+    *,
+    params_hash: str = "h1",
+    segments: Sequence[TranscriptSegment] | None = None,
+    count: int = 4,
+) -> NewAnalysis:
+    """A real analysis (signals, scores, ranking) of a scripted podcast, ready to store."""
+    from iftyedits.core.candidates import CandidateConfig, generate_candidates
+    from iftyedits.core.scoring import (
+        SCORING_VERSION,
+        RankingConfig,
+        candidate_key,
+        rank_candidates,
+        score_candidates,
+    )
+    from iftyedits.core.signals import SIGNALS_VERSION, build_evidence
+
+    segs = tuple(segments) if segments is not None else podcast()
+    evidence = build_evidence(
+        segs, duration_s=segs[-1].end_s + 2, language="en", loudness=None, scene_cuts=None
+    )
+    config = CandidateConfig()
+    scored = score_candidates(evidence, generate_candidates(evidence, config), config)
+    kept, _ = rank_candidates(scored, RankingConfig(max_count=count))
+    return NewAnalysis(
+        video_id=video_id,
+        transcript_id=transcript_id,
+        analysis_version=SIGNALS_VERSION,
+        scoring_version=SCORING_VERSION,
+        params_hash=params_hash,
+        params={"p": params_hash},
+        duration_s=evidence.duration_s,
+        sources={"transcript": {"used": True}},
+        stats={"best_score": kept[0].score if kept else None},
+        signals=evidence.signals,
+        candidates=[(candidate_key(video_sha, c.start_s, c.end_s), c) for c in kept],
+        processing_s=0.5,
+    )

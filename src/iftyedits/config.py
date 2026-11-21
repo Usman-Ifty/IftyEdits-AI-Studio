@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
@@ -64,6 +64,14 @@ class Settings(BaseSettings):
     transcription_vad: bool = True
     transcription_word_timestamps: bool = True
     transcription_timeout_s: float = Field(default=6 * 3600.0, gt=0)
+    clip_min_s: float = Field(default=15.0, gt=0, le=600)
+    clip_target_s: float = Field(default=40.0, gt=0, le=600)
+    clip_max_s: float = Field(default=60.0, gt=0, le=600)
+    clip_max_candidates: int = Field(default=20, ge=1, le=200)
+    clip_max_overlap: float = Field(default=0.5, ge=0, le=1)
+    clip_scene_threshold: float = Field(default=0.3, ge=0.05, le=0.95)
+    clip_use_audio: bool = True
+    clip_use_scenes: bool = True
     video_extensions: Annotated[tuple[str, ...], NoDecode] = DEFAULT_VIDEO_EXTENSIONS
 
     @field_validator("log_level", mode="before")
@@ -81,6 +89,14 @@ class Settings(BaseSettings):
             ):
                 raise ValueError("transcription_language must be 'auto' or a code such as 'en'")
         return value
+
+    @model_validator(mode="after")
+    def _check_clip_durations(self) -> Settings:
+        if not self.clip_min_s <= self.clip_target_s <= self.clip_max_s:
+            raise ValueError(
+                "clip durations must satisfy clip_min_s <= clip_target_s <= clip_max_s"
+            )
+        return self
 
     @field_validator("video_extensions", mode="before")
     @classmethod
