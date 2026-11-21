@@ -20,6 +20,7 @@ near-duplicates are merged. The output is sorted and fully deterministic.
 from __future__ import annotations
 
 import bisect
+import itertools
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -247,7 +248,7 @@ def generate_candidates(
             drafts.append(_draft(timeline, start, end, f"anchor:{signal.kind.value}", (position,)))
 
     edges = sorted({-1, *timeline.topic_after, len(sentences) - 1})
-    for a, b in zip(edges, edges[1:], strict=False):
+    for a, b in itertools.pairwise(edges):
         first, last = a + 1, b
         if first > last:
             continue
