@@ -29,6 +29,7 @@ PROCESS_VIDEO = "process_video"
 TRANSCRIBE_VIDEO = "transcribe_video"
 DOWNLOAD_MODEL = "download_model"
 ANALYZE_CLIPS = "analyze_clips"
+RENDER_SHORT = "render_short"
 ACTIVE_STATUSES = (JobStatus.QUEUED.value, JobStatus.RUNNING.value)
 CANCELLED_MESSAGE = "Cancelled by user"
 _COLUMNS = (
@@ -152,6 +153,18 @@ class JobQueue:
             if existing is not None:
                 return existing, False
             return self._insert(ANALYZE_CLIPS, {"video_id": video_id, "force": force}), True
+
+    def enqueue_short_render(self, render_id: int, video_id: int) -> tuple[int, bool]:
+        """Queue a Short preview or export; reuses an active job for the same render row.
+
+        Returns ``(job_id, created)``.
+        """
+        with transaction(self.conn):
+            existing = self._active(RENDER_SHORT, "render_id", render_id)
+            if existing is not None:
+                return existing, False
+            payload = {"render_id": render_id, "video_id": video_id}
+            return self._insert(RENDER_SHORT, payload), True
 
     def enqueue_model_download(self, model: str) -> tuple[int, bool]:
         """Queue a speech-model download; reuses an active download of the same model."""

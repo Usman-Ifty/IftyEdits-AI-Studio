@@ -96,3 +96,11 @@ class ClipAnalysisError(IftyEditsError):
 
 class ClipNotFoundError(ClipAnalysisError):
     """No clip candidate with the given id exists."""
+
+
+class ShortConfigError(IftyEditsError):
+    """A Short's edit settings are invalid (for example a reversed time range)."""
+
+
+class ShortRenderError(IftyEditsError):
+    """A Short could not be rendered or its output failed verification."""

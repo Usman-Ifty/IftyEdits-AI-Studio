@@ -43,17 +43,20 @@ from iftyedits.pipeline.jobs import (
     DOWNLOAD_MODEL,
     IMPORT_FILE,
     PROCESS_VIDEO,
+    RENDER_SHORT,
     TRANSCRIBE_VIDEO,
     JobQueue,
 )
 from iftyedits.services.clip_analysis import ClipAnalysisService
 from iftyedits.services.ingest import IngestService, build_vault
 from iftyedits.services.media_prep import MediaPrepService, clean_partials
+from iftyedits.services.shorts import ShortService
 from iftyedits.services.transcription import TranscriptionService, options_from_settings
 from iftyedits.storage.clips import ClipRepository
 from iftyedits.storage.db import open_database
 from iftyedits.storage.originals import assert_safe_output_path
 from iftyedits.storage.processing import ProcessingRepository
+from iftyedits.storage.shorts import ShortRepository
 from iftyedits.storage.transcripts import TranscriptRepository
 from iftyedits.storage.videos import VideoRepository
 
@@ -73,6 +76,11 @@ def default_prober(settings: Settings) -> MediaProber:
 def default_transcoder(settings: Settings) -> MediaTranscoder:
     """ffmpeg configured from settings. Raises ``ExternalToolError`` if missing."""
     return FFmpeg(settings.ffmpeg_path, settings.ffmpeg_timeout_s, encoder=settings.proxy_encoder)
+
+
+def default_export_transcoder(settings: Settings) -> MediaTranscoder:
+    """ffmpeg for Short previews and exports (``IFTYEDITS_EXPORT_ENCODER`` picks the encoder)."""
+    return FFmpeg(settings.ffmpeg_path, settings.ffmpeg_timeout_s, encoder=settings.export_encoder)
 
 
 def default_transcriber(settings: Settings) -> SpeechTranscriber:
@@ -102,6 +110,7 @@ class Worker:
         *,
         prober_factory: ProberFactory = default_prober,
         transcoder_factory: TranscoderFactory = default_transcoder,
+        export_transcoder_factory: TranscoderFactory = default_export_transcoder,
         transcriber_factory: TranscriberFactory = default_transcriber,
         model_store_factory: ModelStoreFactory = default_model_store,
         worker_id: str | None = None,
@@ -121,11 +130,13 @@ class Worker:
         self.processing = ProcessingRepository(self.conn)
         self.prober = prober_factory(settings)
         self.transcoder_factory = transcoder_factory
+        self.export_transcoder_factory = export_transcoder_factory
         self.transcriber_factory = transcriber_factory
         self.models = model_store_factory(settings)
         self._media: MediaPrepService | None = None
         self._transcription: TranscriptionService | None = None
         self._clips: ClipAnalysisService | None = None
+        self._shorts: ShortService | None = None
         self.ingest = IngestService(
             settings, VideoRepository(self.conn), self.prober, build_vault(settings)
         )
@@ -189,6 +200,22 @@ class Worker:
             )
         return self._clips
 
+    def shorts(self) -> ShortService:
+        """Short render service, created on first use (FFmpeg is only started per render)."""
+        if self._shorts is None:
+            settings = self.settings
+            self._shorts = ShortService(
+                settings,
+                VideoRepository(self.conn),
+                TranscriptRepository(self.conn),
+                ClipRepository(self.conn),
+                ShortRepository(self.conn),
+                self.queue,
+                self.prober,
+                lambda: self.export_transcoder_factory(settings),
+            )
+        return self._shorts
+
     def run(self, stop: threading.Event | None = None, *, once: bool = False) -> int:
         """Process jobs until ``stop`` is set (or the queue is empty with ``once``)."""
         stop = stop or threading.Event()
@@ -203,6 +230,9 @@ class Worker:
             if orphaned:
                 logger.warning("Marked %d interrupted stage(s) as failed", orphaned)
             clean_partials(self.settings.derived_dir)
+            stale_renders = ShortRepository(self.conn).reconcile()
+            if stale_renders:
+                logger.warning("Marked %d interrupted Short render(s) as failed", stale_renders)
             self.models.clean_staging()
             while not stop.is_set():
                 if self.process_one():
@@ -275,6 +305,8 @@ class Worker:
             return self._analyze_clips(job, progress)
         if job.kind == DOWNLOAD_MODEL:
             return self._download_model(job, progress)
+        if job.kind == RENDER_SHORT:
+            return self._render_short(job, progress)
         raise IftyEditsError(f"Unknown job kind: {job.kind}")
 
     def _import(self, job: Job, progress: _Progress) -> tuple[dict[str, Any], str]:
@@ -369,6 +401,19 @@ class Worker:
             progress=on_progress,
             cancel=progress.cancel,
         )
+        return report.as_result(), report.summary()
+
+    def _render_short(self, job: Job, progress: _Progress) -> tuple[dict[str, Any], str]:
+        render_id = job.payload.get("render_id")
+        if not isinstance(render_id, int):
+            raise IftyEditsError("Short render job has no render_id")
+        progress.message = "Rendering Short"
+
+        def on_progress(fraction: float, message: str) -> None:
+            progress.fraction = fraction
+            progress.message = message
+
+        report = self.shorts().run_render(render_id, progress=on_progress, cancel=progress.cancel)
         return report.as_result(), report.summary()
 
     def _download_model(self, job: Job, progress: _Progress) -> tuple[dict[str, Any], str]:

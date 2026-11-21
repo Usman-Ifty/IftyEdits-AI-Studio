@@ -168,6 +168,7 @@ JOB_KIND_LABELS = {
     "process_video": "prepare media",
     "transcribe_video": "transcribe",
     "analyze_clips": "analyse clips",
+    "render_short": "render Short",
     "download_model": "download model",
 }
 
