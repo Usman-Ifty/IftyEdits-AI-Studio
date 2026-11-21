@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from iftyedits.core.clip_models import ClipAnalysis
 from iftyedits.core.languages import language_name
 from iftyedits.core.models import (
     ALL_STAGES,
@@ -132,6 +133,9 @@ def job_outcome(job: Job) -> str:
         return ""
     if "outcome" in job.result:
         return str(job.result["outcome"])
+    if "analysis_id" in job.result:
+        count = job.result.get("candidates", 0)
+        return "reused" if job.result.get("reused") else f"{count} suggestions"
     if "transcript_id" in job.result:
         segments = job.result.get("segments", 0)
         return "reused" if job.result.get("reused") else f"{segments} segments"
@@ -163,6 +167,7 @@ JOB_KIND_LABELS = {
     "import_file": "import",
     "process_video": "prepare media",
     "transcribe_video": "transcribe",
+    "analyze_clips": "analyse clips",
     "download_model": "download model",
 }
 
@@ -249,6 +254,19 @@ def transcript_cell(transcript: Transcript | None, job: Job | None) -> str:
         return "⏳ running" if job.status is JobStatus.RUNNING else "⏳ queued"
     if transcript is not None:
         return "✅ no speech" if transcript.is_empty else "✅ done"
+    if job is not None and job.status is JobStatus.FAILED:
+        return "❌ failed"
+    if job is not None and job.status is JobStatus.CANCELLED:
+        return "⏹ cancelled"
+    return NOT_STARTED
+
+
+def clips_cell(analysis: ClipAnalysis | None, job: Job | None) -> str:
+    """Library column: state of a video's clip analysis."""
+    if job is not None and job.status in (JobStatus.QUEUED, JobStatus.RUNNING):
+        return "⏳ running" if job.status is JobStatus.RUNNING else "⏳ queued"
+    if analysis is not None:
+        return f"✅ {analysis.candidate_count} suggestions"
     if job is not None and job.status is JobStatus.FAILED:
         return "❌ failed"
     if job is not None and job.status is JobStatus.CANCELLED:

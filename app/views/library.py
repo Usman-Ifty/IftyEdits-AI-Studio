@@ -8,7 +8,8 @@ import streamlit as st
 
 from iftyedits.config import Settings
 from iftyedits.core.models import ALL_STAGES, ArtifactKind, CancelOutcome, StageStatus, Video
-from iftyedits.pipeline.jobs import TRANSCRIBE_VIDEO, JobQueue
+from iftyedits.pipeline.jobs import ANALYZE_CLIPS, TRANSCRIBE_VIDEO, JobQueue
+from iftyedits.storage.clips import ClipRepository
 from iftyedits.storage.db import open_database
 from iftyedits.storage.originals import is_within
 from iftyedits.storage.processing import ProcessingRepository
@@ -16,6 +17,7 @@ from iftyedits.storage.transcripts import TranscriptRepository
 from iftyedits.storage.videos import VideoRepository
 from iftyedits.ui.formatting import (
     artifact_row,
+    clips_cell,
     human_duration,
     human_size,
     job_status_label,
@@ -39,6 +41,8 @@ with closing(open_database(settings.db_path)) as conn:
     summary = ProcessingRepository(conn).stage_summary()
     transcripts = TranscriptRepository(conn).current_by_video()
     transcription_jobs = JobQueue(conn).latest_by_video(TRANSCRIBE_VIDEO)
+    clip_analyses = ClipRepository(conn).current_by_video()
+    clip_jobs = JobQueue(conn).latest_by_video(ANALYZE_CLIPS)
 
 if not videos:
     st.info("No videos imported yet. Use the Import page to add some.")
@@ -50,6 +54,7 @@ st.dataframe(
             **video_row(v, streams[v.id], len(sources[v.id])),
             **processing_columns(summary.get(v.id, {})),
             "Transcript": transcript_cell(transcripts.get(v.id), transcription_jobs.get(v.id)),
+            "Clips": clips_cell(clip_analyses.get(v.id), clip_jobs.get(v.id)),
         }
         for v in videos
     ],

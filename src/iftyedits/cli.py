@@ -20,18 +20,37 @@ from iftyedits.adapters.ffmpeg import FFmpeg
 from iftyedits.adapters.ffprobe import FFprobe
 from iftyedits.adapters.model_store import build_model_store
 from iftyedits.config import Settings, project_home
+from iftyedits.core.clip_models import ClipCandidate, ClipDecision
 from iftyedits.core.errors import IftyEditsError
 from iftyedits.core.models import ALL_STAGES, CancelOutcome, ModelState, Stage
+from iftyedits.core.scoring import CATEGORY_LABELS, SCORING_VERSION
 from iftyedits.pipeline.jobs import JobQueue
 from iftyedits.pipeline.worker import Worker
 from iftyedits.services.ingest import IngestService, build_vault, discover, validate_source
 from iftyedits.services.subtitles import EXPORT_FORMATS, export
 from iftyedits.services.transcription import options_from_settings, transcription_blocker
+from iftyedits.storage.clips import ClipRepository
 from iftyedits.storage.db import open_database, schema_version
 from iftyedits.storage.originals import ProgressCallback, assert_safe_output_path, sha256_file
 from iftyedits.storage.processing import ProcessingRepository
 from iftyedits.storage.transcripts import TranscriptRepository
 from iftyedits.storage.videos import VideoRepository
+from iftyedits.ui.clips import (
+    DECISION_FILTERS,
+    SORT_OPTIONS,
+    ClipFilter,
+    category_label,
+    clip_row,
+    component_rows,
+    confidence_band,
+    decision_label,
+    filter_candidates,
+    score_band,
+    signal_row,
+    signals_for,
+    sort_candidates,
+    span_label,
+)
 from iftyedits.ui.formatting import (
     human_duration,
     human_size,
@@ -305,6 +324,132 @@ def cmd_transcribe(settings: Settings, args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_analyze(settings: Settings, args: argparse.Namespace) -> int:
+    """Queue clip analysis of imported videos that have a transcript."""
+    with closing(open_database(settings.db_path)) as conn:
+        repo = VideoRepository(conn)
+        if args.all:
+            videos = repo.list_recent(limit=1_000_000)
+        elif args.videos:
+            videos = [repo.resolve_reference(ref) for ref in args.videos]
+        else:
+            print("Name one or more videos, or use --all.", file=sys.stderr)
+            return EXIT_USAGE
+        transcripts = TranscriptRepository(conn)
+        queue = JobQueue(conn)
+        for video in videos:
+            if transcripts.current(video.id) is None:
+                print(
+                    f"skip  #{video.id}  {video.original_filename}: no transcript yet "
+                    f"(run `iftyedits transcribe {video.id}`)"
+                )
+                continue
+            job_id, created = queue.enqueue_clip_analysis(video.id, force=args.force)
+            state = "queued" if created else "already queued"
+            print(f"job {job_id:<5} {state:<15} #{video.id}  {video.original_filename}")
+    if not videos:
+        print("No videos imported yet.")
+    return EXIT_OK
+
+
+def _find_candidate(repo: ClipRepository, video_id: int, reference: str) -> ClipCandidate:
+    """A suggestion of the current analysis by rank (``3``) or stable key."""
+    analysis = repo.current(video_id)
+    if analysis is None:
+        raise IftyEditsError(f"Video #{video_id} has no clip analysis yet")
+    candidates = repo.candidates(analysis.id)
+    ref = reference.strip().lower()
+    if ref.isdigit():
+        matches = [c for c in candidates if c.rank == int(ref)]
+    else:
+        matches = [c for c in candidates if c.key.startswith(ref)] if len(ref) >= 4 else []
+    if len(matches) != 1:
+        raise IftyEditsError(
+            f"No unique suggestion matches {reference!r}; use a rank (1-{len(candidates)}) "
+            "or a key prefix of at least 4 characters"
+        )
+    return matches[0]
+
+
+def cmd_clips(settings: Settings, args: argparse.Namespace) -> int:
+    """List, inspect and review the ranked clip suggestions of a video."""
+    with closing(open_database(settings.db_path)) as conn:
+        video = VideoRepository(conn).resolve_reference(args.video)
+        repo = ClipRepository(conn)
+        analysis = repo.current(video.id)
+        if analysis is None:
+            print(
+                f"Video #{video.id} has no clip analysis yet. "
+                f"Run `iftyedits analyze {video.id}` with a worker running.",
+                file=sys.stderr,
+            )
+            return EXIT_FAILED
+        if args.action in ("favorite", "reject", "clear"):
+            if not args.ref:
+                print("Name a suggestion by rank or key.", file=sys.stderr)
+                return EXIT_USAGE
+            target = _find_candidate(repo, video.id, args.ref)
+            decision = {
+                "favorite": ClipDecision.FAVORITE,
+                "reject": ClipDecision.REJECTED,
+                "clear": None,
+            }[args.action]
+            updated = repo.decide(target.id, decision)
+            label = decision_label(updated.decision) or "no decision"
+            print(f"#{updated.rank} {updated.key}: {label}")
+            return EXIT_OK
+        if args.action == "show":
+            if not args.ref:
+                print("Name a suggestion by rank or key.", file=sys.stderr)
+                return EXIT_USAGE
+            return _print_clip(repo, _find_candidate(repo, video.id, args.ref), analysis.id)
+        candidates = filter_candidates(
+            repo.candidates(analysis.id),
+            ClipFilter(
+                categories=frozenset(args.type or ()),
+                min_score=args.min_score,
+                decision=args.status,
+            ),
+        )
+        for c in sort_candidates(candidates, args.sort):
+            row = clip_row(c)
+            print(
+                f"#{row['Rank']:<3} {row['Score']:>3}  {row['Start']:>9} - {row['End']:<9} "
+                f"{row['Length (s)']:>3}s  {row['Type']:<22} {c.key[:8]}  {row['Title']}"
+                + (f"  [{row['Status']}]" if row["Status"] else "")
+            )
+        if not candidates:
+            print("No suggestions match.")
+    return EXIT_OK
+
+
+def _print_clip(repo: ClipRepository, c: ClipCandidate, analysis_id: int) -> int:
+    print(f"#{c.rank}  {c.title}")
+    print(f"key      {c.key}")
+    print(f"type     {category_label(c.category)}")
+    print(f"span     {span_label(c)}")
+    print(f"score    {c.score:.0f}/100 ({score_band(c.score)}); {confidence_band(c.confidence)}")
+    if c.decision:
+        print(f"status   {decision_label(c.decision)}")
+    print(f"\n{c.explanation}\n")
+    for row in component_rows(c):
+        print(f"  {row['Factor']:<20} {row['Value']:>3}  weight {row['Weight']:<5}  {row['Why']}")
+    for heading, items in (("Strengths", c.strengths), ("Weaknesses", c.weaknesses)):
+        if items:
+            print(f"\n{heading}")
+            for item in items:
+                print(f"  - {item}")
+    print("\nSignals")
+    for s in signals_for(c, repo.signals(analysis_id)):
+        row = signal_row(s)
+        print(
+            f"  [{row['Source']}] {row['Signal']:<18} {row['Start']} - {row['End']}  "
+            f"{row['Detail']}"
+        )
+    print(f"\nExcerpt\n{c.excerpt}")
+    return EXIT_OK
+
+
 def cmd_transcript(settings: Settings, args: argparse.Namespace) -> int:
     """Print (or save under data/exports) the current transcript of a video."""
     with closing(open_database(settings.db_path)) as conn:
@@ -473,6 +618,7 @@ def cmd_check(settings: Settings, args: argparse.Namespace) -> int:
             f"note        default model {settings.transcription_model} is not downloaded "
             f"(`iftyedits models download {settings.transcription_model}`)"
         )
+    print(f"clips       algorithmic scoring v{SCORING_VERSION} (no model, no network)")
     with closing(open_database(settings.db_path)) as conn:
         print(f"database    {settings.db_path} (schema v{schema_version(conn)})")
         workers = JobQueue(conn).live_workers()
@@ -586,6 +732,22 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--language", help="language code such as en, or auto (default: setting)")
     p.add_argument("--force", action="store_true", help="transcribe again even if unchanged")
     p.set_defaults(func=cmd_transcribe)
+
+    p = sub.add_parser("analyze", help="queue clip analysis of transcribed videos")
+    p.add_argument("videos", nargs="*", help="video ids or SHA-256 prefixes")
+    p.add_argument("--all", action="store_true", help="every imported video")
+    p.add_argument("--force", action="store_true", help="analyse again even if unchanged")
+    p.set_defaults(func=cmd_analyze)
+
+    p = sub.add_parser("clips", help="list, inspect, favorite or reject clip suggestions")
+    p.add_argument("action", choices=["list", "show", "favorite", "reject", "clear"])
+    p.add_argument("video", help="video id or SHA-256 prefix")
+    p.add_argument("ref", nargs="?", help="suggestion rank or key prefix (not for list)")
+    p.add_argument("--sort", choices=list(SORT_OPTIONS), default="rank")
+    p.add_argument("--type", action="append", choices=list(CATEGORY_LABELS), help="moment type")
+    p.add_argument("--min-score", type=float, default=0.0)
+    p.add_argument("--status", choices=list(DECISION_FILTERS), default="all")
+    p.set_defaults(func=cmd_clips)
 
     p = sub.add_parser("transcript", help="print or save the current transcript of a video")
     p.add_argument("video", help="video id or SHA-256 prefix")

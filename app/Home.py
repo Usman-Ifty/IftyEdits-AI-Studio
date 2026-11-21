@@ -12,6 +12,7 @@ navigation = st.navigation(
         st.Page("views/import_videos.py", title="Import"),
         st.Page("views/library.py", title="Library"),
         st.Page("views/transcripts.py", title="Transcripts"),
+        st.Page("views/clips.py", title="Clips"),
         st.Page("views/jobs.py", title="Jobs"),
     ]
 )

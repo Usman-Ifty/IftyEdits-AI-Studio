@@ -9,6 +9,7 @@ import streamlit as st
 from iftyedits.config import Settings
 from iftyedits.core.models import ALL_STAGES, StageStatus
 from iftyedits.pipeline.jobs import JobQueue
+from iftyedits.storage.clips import ClipRepository
 from iftyedits.storage.db import open_database
 from iftyedits.storage.processing import ProcessingRepository
 from iftyedits.storage.transcripts import TranscriptRepository
@@ -27,17 +28,19 @@ with closing(open_database(settings.db_path)) as conn:
     active = queue.count_active()
     summary = ProcessingRepository(conn).stage_summary()
     transcribed = len(TranscriptRepository(conn).current_by_video())
+    analysed = len(ClipRepository(conn).current_by_video())
 
 done = (StageStatus.SUCCEEDED, StageStatus.SKIPPED)
 prepared = sum(1 for v in videos if all(summary.get(v.id, {}).get(s) in done for s in ALL_STAGES))
 failed = sum(1 for v in videos if StageStatus.FAILED in summary.get(v.id, {}).values())
 
-col1, col2, col3, col4, col5 = st.columns(5)
+col1, col2, col3, col4, col5, col6 = st.columns(6)
 col1.metric("Videos", len(videos))
 col2.metric("Library size", human_size(sum(v.size_bytes for v in videos)))
 col3.metric("Media prepared", f"{prepared} / {len(videos)}")
 col4.metric("Transcribed", f"{transcribed} / {len(videos)}")
-col5.metric("Active jobs", active)
+col5.metric("Clips analysed", f"{analysed} / {len(videos)}")
+col6.metric("Active jobs", active)
 if failed:
     st.error(f"{failed} video(s) have a failed preparation stage. See the Library page.")
 elif videos and prepared < len(videos):
