@@ -306,3 +306,24 @@ damaged audio file) is marked degraded and is not reused.
 **Consequences:** Re-running is cheap and idempotent. Changing a transcript, a setting or
 feedback produces a new analysis automatically. Decisions about a boundary that later moves
 by a different key no longer attach to the new candidate.
+
+
+---
+
+## D22 — Model downloads retry and resume; stale processes are an operational risk (2026-11-22)
+
+**Context:** Two real `small` downloads failed (an incomplete `model.bin`, then a read timeout)
+and each restarted from zero. Separately, a dashboard and worker started before the Phase 2
+code landed kept the old modules in memory and failed with `ImportError` on the new job kind
+and error class, although the files on disk were correct.
+**Decision:** This supersedes the "cannot resume" consequence of D18. A file download now makes
+up to 4 attempts. Transient failures (network errors, timeouts, dropped connections, HTTP 429
+and 5xx, short bodies) keep the partial file and the next attempt sends an HTTP `Range`
+request; the partial bytes are re-hashed first, so the SHA-256 check still covers the whole
+file. A server that answers 200 instead of 206 makes the file restart. Client errors (404),
+oversized bodies and checksum mismatches fail at once. Nothing is installed until every file
+passes its size and SHA-256 check, as before. Python does not reload imported modules, so after
+updating the code stop `iftyedits ui` and start it again (the guide says so).
+**Consequences:** A flaky connection no longer throws away hundreds of megabytes. Resume
+across separate jobs is not implemented: a failed job's staging folder is discarded.
+

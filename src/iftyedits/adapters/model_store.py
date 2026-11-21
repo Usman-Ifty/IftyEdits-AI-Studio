@@ -10,6 +10,8 @@ Downloads:
   always means the same weights;
 * check free disk space first;
 * stream into a hidden staging folder with byte-level progress and cancellation;
+* retry transient network failures a few times, resuming the partial file with an HTTP
+  ``Range`` request when the server honours it (otherwise the file restarts);
 * verify every file's size, and the SHA-256 of the weights published by Hugging Face;
 * replace the model folder only after every file has been verified.
 """
@@ -17,6 +19,7 @@ Downloads:
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import logging
 import shutil
@@ -53,6 +56,8 @@ SPACE_MARGIN_BYTES = 512 * 1024**2
 CHUNK_SIZE = 1024 * 1024
 REQUEST_TIMEOUT_S = 60.0
 STALE_STAGING_AGE_S = 3600.0
+DOWNLOAD_ATTEMPTS = 4
+RETRY_DELAY_S = 2.0
 USER_AGENT = "iftyedits-model-store/1"
 
 
@@ -174,6 +179,9 @@ def file_url(spec: SpeechModelSpec, file: ModelFile) -> str:
 class Response(Protocol):
     """The part of an HTTP response the store uses."""
 
+    status: int
+    """HTTP status; 206 means the server resumed at the requested offset."""
+
     def read(self, amount: int = -1, /) -> bytes:
         """Read up to ``amount`` bytes."""
         ...
@@ -183,16 +191,24 @@ class Response(Protocol):
         ...
 
 
-Opener = Callable[[str, float], Response]
-"""Opens a URL with a timeout in seconds. Replaced in tests; never used for other hosts."""
+Opener = Callable[[str, float, int], Response]
+"""Opens a URL with a timeout in seconds, starting at a byte offset (0 = the whole file).
+Replaced in tests; never used for other hosts."""
 
 
-def _default_opener(url: str, timeout: float) -> Response:
+def _default_opener(url: str, timeout: float, offset: int = 0) -> Response:
     if not url.startswith(f"{HF_BASE_URL}/"):
         raise ModelDownloadError(f"Refusing to download from an unexpected URL: {url}")
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})  # noqa: S310 - https only, checked above
+    headers = {"User-Agent": USER_AGENT}
+    if offset > 0:
+        headers["Range"] = f"bytes={offset}-"
+    request = urllib.request.Request(url, headers=headers)  # noqa: S310 - https only, checked above
     response: Response = urllib.request.urlopen(request, timeout=timeout)  # noqa: S310
     return response
+
+
+class _Transient(Exception):
+    """A download failure worth retrying (network drop, timeout, server error)."""
 
 
 class ModelStore:
@@ -349,45 +365,89 @@ class ModelStore:
         progress: ByteProgress | None,
         cancel: CancelToken | None,
     ) -> int:
+        """Fetch one file, retrying transient failures and resuming the partial file."""
         target = staging / file.name
+        failure = ""
+        for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
+            try:
+                return self._fetch(spec, file, target, done, progress, cancel)
+            except _Transient as exc:
+                failure = str(exc)
+                logger.warning(
+                    "Download of %s (%s) interrupted, attempt %d of %d: %s",
+                    file.name,
+                    spec.name,
+                    attempt,
+                    DOWNLOAD_ATTEMPTS,
+                    failure,
+                )
+                if attempt < DOWNLOAD_ATTEMPTS:
+                    time.sleep(RETRY_DELAY_S * attempt)
+        raise ModelDownloadError(
+            f"Could not download model {spec.name} ({file.name}) after {DOWNLOAD_ATTEMPTS} "
+            f"attempts: {failure}. Check the internet connection and try again."
+        )
+
+    def _fetch(
+        self,
+        spec: SpeechModelSpec,
+        file: ModelFile,
+        target: Path,
+        done: int,
+        progress: ByteProgress | None,
+        cancel: CancelToken | None,
+    ) -> int:
         digest = hashlib.sha256()
-        written = 0
+        written = target.stat().st_size if target.is_file() else 0
+        if written > file.size_bytes:
+            target.unlink()
+            written = 0
+        if written:
+            with target.open("rb") as existing:
+                while block := existing.read(CHUNK_SIZE):
+                    digest.update(block)
         url = file_url(spec, file)
         try:
-            response = self._open(url, REQUEST_TIMEOUT_S)
-            with closing(response), target.open("xb") as handle:
-                while True:
-                    if cancel is not None and cancel.is_set():
-                        raise JobCancelledError(f"Download of model {spec.name} cancelled")
-                    chunk = response.read(CHUNK_SIZE)
-                    if not chunk:
-                        break
-                    written += len(chunk)
-                    if written > file.size_bytes:
-                        raise ModelDownloadError(
-                            f"{file.name} of model {spec.name} is larger than expected"
-                        )
-                    handle.write(chunk)
-                    digest.update(chunk)
-                    if progress is not None:
-                        progress(done + written, spec.size_bytes)
+            if written < file.size_bytes:
+                response = self._open(url, REQUEST_TIMEOUT_S, written)
+                with closing(response):
+                    if written and response.status != 206:
+                        # The server ignored the Range request and sends the whole file.
+                        target.unlink()
+                        digest = hashlib.sha256()
+                        written = 0
+                    with target.open("ab") as handle:
+                        while True:
+                            if cancel is not None and cancel.is_set():
+                                raise JobCancelledError(f"Download of model {spec.name} cancelled")
+                            chunk = response.read(CHUNK_SIZE)
+                            if not chunk:
+                                break
+                            written += len(chunk)
+                            if written > file.size_bytes:
+                                target.unlink()
+                                raise ModelDownloadError(
+                                    f"{file.name} of model {spec.name} is larger than expected"
+                                )
+                            handle.write(chunk)
+                            digest.update(chunk)
+                            if progress is not None:
+                                progress(done + written, spec.size_bytes)
         except urllib.error.HTTPError as exc:
-            raise ModelDownloadError(
+            message = (
                 f"Download of {file.name} for model {spec.name} failed: HTTP {exc.code} "
                 f"{exc.reason}. Try again later."
-            ) from exc
-        except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
-            reason = getattr(exc, "reason", exc)
-            raise ModelDownloadError(
-                f"Could not download model {spec.name} ({file.name}): {reason}. "
-                "Check the internet connection and try again."
-            ) from exc
-        if written != file.size_bytes:
-            raise ModelDownloadError(
-                f"{file.name} of model {spec.name} is incomplete "
-                f"({written} of {file.size_bytes} bytes). Try again."
             )
+            if exc.code == 429 or exc.code >= 500:
+                raise _Transient(message) from exc
+            raise ModelDownloadError(message) from exc
+        except (urllib.error.URLError, OSError, http.client.HTTPException) as exc:
+            reason = getattr(exc, "reason", exc) or type(exc).__name__
+            raise _Transient(str(reason)) from exc
+        if written != file.size_bytes:
+            raise _Transient(f"{file.name} is incomplete ({written} of {file.size_bytes} bytes)")
         if file.sha256 is not None and digest.hexdigest() != file.sha256:
+            target.unlink()
             raise ModelDownloadError(
                 f"{file.name} of model {spec.name} failed its SHA-256 check; it was discarded"
             )

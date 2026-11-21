@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import io
 import os
 import shutil
@@ -41,19 +42,51 @@ SPEC = SpeechModelSpec(
 )
 
 
+class FakeResponse(io.BytesIO):
+    """A response body; ``fail_after`` makes the connection drop after that many bytes."""
+
+    def __init__(self, body: bytes, status: int, fail_after: int | None = None) -> None:
+        super().__init__(body)
+        self.status = status
+        self.fail_after = fail_after
+        self.sent = 0
+
+    def read(self, amount: int | None = -1, /) -> bytes:
+        if self.fail_after is not None and self.sent >= self.fail_after:
+            raise http.client.IncompleteRead(b"")
+        limit = amount if amount is not None and amount >= 0 else len(self.getbuffer())
+        if self.fail_after is not None:
+            limit = min(limit, self.fail_after - self.sent)
+        data = super().read(limit)
+        self.sent += len(data)
+        return data
+
+
 class FakeServer:
-    """Serves files by URL; records requests."""
+    """Serves files by URL (honouring Range offsets); records requests."""
 
     def __init__(self, files: dict[str, bytes]) -> None:
         self.files = files
         self.requested: list[str] = []
+        self.offsets: list[int] = []
         self.error: Exception | None = None
+        self.drops: list[int | None] = []  # connection drops after N bytes, one per request
+        self.honour_range = True
 
-    def __call__(self, url: str, timeout: float) -> io.BytesIO:
+    def __call__(self, url: str, timeout: float, offset: int = 0) -> FakeResponse:
         self.requested.append(url)
+        self.offsets.append(offset)
         if self.error is not None:
             raise self.error
-        return io.BytesIO(self.files[url.rsplit("/", 1)[1]])
+        body = self.files[url.rsplit("/", 1)[1]]
+        resumed = offset > 0 and self.honour_range
+        fail_after = self.drops.pop(0) if self.drops else None
+        return FakeResponse(body[offset:] if resumed else body, 206 if resumed else 200, fail_after)
+
+
+@pytest.fixture(autouse=True)
+def no_retry_delay(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("iftyedits.adapters.model_store.RETRY_DELAY_S", 0.0)
 
 
 @pytest.fixture
@@ -211,3 +244,51 @@ def test_remove_tree_refuses_outside_root(store: ModelStore, tmp_path: Path) -> 
     with pytest.raises(OriginalProtectionError):
         store._remove_tree(store.root)
     assert outside.exists()
+
+
+def test_dropped_connection_resumes_the_partial_file(store: ModelStore, server: FakeServer) -> None:
+    server.drops = [None, 1200]  # config.json is fine; model.bin drops once mid-file
+    assert store.install("mini").state is ModelState.INSTALLED
+    assert (store.root / "mini" / "model.bin").read_bytes() == WEIGHTS
+    assert server.offsets == [0, 0, 1200]
+    assert list(store.root.iterdir()) == [store.root / "mini"]
+
+
+def test_server_that_ignores_range_restarts_the_file(store: ModelStore, server: FakeServer) -> None:
+    server.honour_range = False
+    server.drops = [None, 1200]
+    assert store.install("mini").state is ModelState.INSTALLED
+    assert (store.root / "mini" / "model.bin").read_bytes() == WEIGHTS
+    assert server.offsets == [0, 0, 1200]
+
+
+def test_persistent_drops_give_up_and_install_nothing(
+    store: ModelStore, server: FakeServer
+) -> None:
+    server.drops = [None] + [500] * 10
+    with pytest.raises(ModelDownloadError, match="after 4 attempts"):
+        store.install("mini")
+    assert store.status("mini").state is ModelState.MISSING
+    assert list(store.root.iterdir()) == []
+
+
+def test_server_errors_are_retried_but_client_errors_are_not(
+    store: ModelStore, server: FakeServer
+) -> None:
+    server.error = urllib.error.HTTPError("u", 503, "Unavailable", {}, None)  # type: ignore[arg-type]
+    with pytest.raises(ModelDownloadError, match="after 4 attempts"):
+        store.install("mini")
+    assert len(server.requested) == 4
+    server.requested.clear()
+    server.error = urllib.error.HTTPError("u", 404, "Not Found", {}, None)  # type: ignore[arg-type]
+    with pytest.raises(ModelDownloadError, match="HTTP 404"):
+        store.install("mini")
+    assert len(server.requested) == 1
+
+
+def test_partial_install_is_never_reported_installed(store: ModelStore, server: FakeServer) -> None:
+    server.drops = [None] + [500] * 10
+    with pytest.raises(ModelDownloadError):
+        store.install("mini")
+    assert not (store.root / "mini").exists()
+    assert store.status("mini").state is ModelState.MISSING

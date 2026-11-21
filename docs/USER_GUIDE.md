@@ -57,6 +57,11 @@ uv run streamlit run app/Home.py
 
 If no worker is running, jobs wait in the queue. Every page warns you when that happens.
 
+After you update the code (for example `git pull`), stop the app with Ctrl-C and start it
+again. A dashboard or worker that was already running keeps the old code in memory and can
+fail with `ImportError` on new pages or job types. Run `iftyedits` commands from the project
+folder (or set `IFTYEDITS_HOME`); from another folder they open a different, empty `data/`.
+
 ## 3. The dashboard
 
 The sidebar has five pages: Overview, Import, Library, Transcripts and Jobs.
@@ -261,7 +266,7 @@ IFTYEDITS_TRANSCRIPTION_LANGUAGE=auto
 | "Speech model 'small' is not downloaded" | No model yet | Download it on the Transcripts page |
 | "This video has no audio track" | Nothing to transcribe | None |
 | "The prepared audio file is unreadable" | Damaged audio | Regenerate media, or transcribe again (it regenerates damaged audio) |
-| "Could not download model …" | Network problem | Check the connection; press Download again |
+| "Could not download model …" | Network problem (each file is retried 4 times and resumed) | Check the connection; press Download again |
 | "Transcription took longer than the configured limit" | Hit `IFTYEDITS_TRANSCRIPTION_TIMEOUT_S` | Use a smaller model or raise the limit |
 
 A worker that stops unexpectedly (crash, shutdown) returns its running job to the queue, and a new

@@ -519,3 +519,48 @@ display helpers, then the documentation commit that follows them.
 Owner review of the Phase 2 diff and a try on a real transcript (`uv run iftyedits ui`,
 Clips page). Then Phase 3A (vertical reframing), which can use `ClipCandidate.effective_start_s`
 and `effective_end_s` as its input.
+
+---
+
+## Phase 2 stabilization (2026-11-22)
+
+Triggered by a real-world run on the GTA 6 video. Branch `feat/phase-2-clip-intelligence`.
+
+### Root causes
+
+- **`ImportError: ANALYZE_CLIPS` / `ClipAnalysisError`:** not a code defect. `iftyedits ui`
+  (dashboard and worker, pid 67645 onward) was started at 23:19, before the Phase 2 code was on
+  disk. Streamlit reloads page scripts but not already imported library modules, so the
+  running process kept the old `pipeline.jobs` and `core.errors`. Both names exist on the
+  branch (`jobs.py:31`, `errors.py:93`). Fix: restart the app. A test now imports every name the
+  pages use.
+- **`No video with id 1` / `No videos imported yet`:** same database, no mismatch. The CLI
+  command ran at about 23:19, before the video was imported at 23:38. Both the CLI and the
+  pages use `Settings.from_env()`; `check` showed the same `data/db/iftyedits.sqlite`. The
+  one real hazard is documented: relative paths resolve against the current directory, so a
+  CLI run from another folder opens (and creates) a different, empty `data/`.
+- **Duplicate `transcribe_video` jobs:** job 4 was a second click; it was reused
+  (`Reused existing tiny transcript`) in 0.05 s, as designed.
+- **Job 5 (`download_model` small):** not stuck. It is a live third attempt, heartbeating, in
+  a `.download-small-*` staging folder, left alone. The earlier failures were CLI downloads.
+
+### Changes
+
+- `adapters/model_store.py`: retry up to 4 times with `Range` resume, re-hash the partial
+  file, restart when the server ignores `Range`, treat `IncompleteRead` and other `OSError`s
+  as transient (they used to escape as raw tracebacks). Never marks a partial model installed.
+- Tests: `tests/unit/test_model_store.py` (resume, ignored range, give-up, 5xx versus 404),
+  `tests/unit/test_ui_pages_consistency.py` (every page runs, every imported name exists, job
+  kinds and clip errors importable, CLI and pages share a database, late import visible).
+
+### Real GTA 6 validation
+
+Real transcript (tiny, 163 segments, 2,905 words), real 15:06 video, real data folder, no
+fixture. Result: 168 signals, 49 proposals, 20 suggestions, scores 45 to 63, analysis 9.8 s.
+Boundaries land on sentence edges and every clip is 13 to 61 s. Known weaknesses found: the
+closing "like and subscribe" outro ranks #5 and the host's intro line anchors #4 (no
+intro/outro/call-to-action detection yet), and "Emotional moment" or "Funny moment" labels
+fire on commentary wording in a gameplay breakdown. Strength and weakness lines can show a
+component's detail text (for example "Weak start") under Strengths when its score is high.
+Suggested follow-up: a boilerplate/CTA penalty with a `SCORING_VERSION` bump.
+

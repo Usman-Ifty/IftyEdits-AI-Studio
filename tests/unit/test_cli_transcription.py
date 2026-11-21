@@ -64,15 +64,19 @@ def _save_transcript(settings: Settings, video_id: int) -> None:
         )
 
 
+class _Body(io.BytesIO):
+    status = 200
+
+
 def test_models_list_and_download(
     cli_env: Settings, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     files = {"config.json": CONFIG, "model.bin": WEIGHTS}
-    store = ModelStore(
-        cli_env.models_dir,
-        catalog=(SPEC,),
-        opener=lambda url, timeout: io.BytesIO(files[url.rsplit("/", 1)[1]]),
-    )
+
+    def opener(url: str, timeout: float, offset: int = 0) -> _Body:
+        return _Body(files[url.rsplit("/", 1)[1]])
+
+    store = ModelStore(cli_env.models_dir, catalog=(SPEC,), opener=opener)
     _fake_store(monkeypatch, store)
     assert cli.main(["models"]) == 0
     out = capsys.readouterr().out
