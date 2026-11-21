@@ -133,3 +133,109 @@ def test_import_folder_summary_counts_skipped(
     err = capsys.readouterr().err
     assert "notes.txt" in err and "unsupported file extension" in err
     assert ".hidden.mp4" in err and "hidden file" in err
+
+
+# ------------------------------------------------------------------ Phase 1B commands
+
+
+def test_enqueue_with_process_flag(
+    cli_env: Settings, make_media: MakeMedia, capsys: pytest.CaptureFixture[str]
+) -> None:
+    clip = make_media("a.mp4")
+    assert cli.main(["enqueue", "--process", str(clip)]) == 0
+    conn = open_database(cli_env.db_path)
+    try:
+        (job,) = JobQueue(conn).list_recent()
+    finally:
+        conn.close()
+    assert job.payload == {"path": str(clip), "process": True}
+
+
+def test_process_jobs_cancel_and_artifacts(
+    cli_env: Settings,
+    ingest: IngestService,
+    make_media: MakeMedia,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    video = ingest.import_video(make_media("talk.mp4")).video
+
+    assert cli.main(["process"]) == 2
+    assert "--all" in capsys.readouterr().err
+
+    assert cli.main(["process", str(video.id), "--stage", "proxy", "--force"]) == 0
+    assert "queued" in capsys.readouterr().out
+    assert cli.main(["process", "--all"]) == 0
+    assert "already queued" in capsys.readouterr().out
+
+    conn = open_database(cli_env.db_path)
+    try:
+        (job,) = JobQueue(conn).list_active()
+    finally:
+        conn.close()
+    assert job.payload == {"video_id": video.id, "stages": ["proxy"], "force": True}
+
+    assert cli.main(["jobs", "--active"]) == 0
+    out = capsys.readouterr().out
+    assert f"video #{video.id}" in out and "queued" in out
+
+    assert cli.main(["cancel", str(job.id)]) == 0
+    assert f"job {job.id}: cancelled" in capsys.readouterr().out
+    assert cli.main(["cancel", str(job.id), "999"]) == 1
+    out = capsys.readouterr().out
+    assert "already finished" in out and "job 999: no such job" in out
+
+    assert cli.main(["jobs", "--active"]) == 0
+    assert "No active jobs." in capsys.readouterr().out
+
+    assert cli.main(["artifacts", str(video.id), "--verify"]) == 0
+    out = capsys.readouterr().out
+    assert "none yet" in out and "artifacts\n  none" in out
+
+
+def test_artifacts_verify_detects_damage(
+    cli_env: Settings,
+    ingest: IngestService,
+    make_media: MakeMedia,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from iftyedits.core.models import ArtifactKind, Stage
+    from iftyedits.storage.originals import sha256_file
+    from iftyedits.storage.processing import ProcessingRepository
+
+    video = ingest.import_video(make_media("talk.mp4")).video
+    wav = cli_env.derived_dir / "x" / "audio.wav"
+    wav.parent.mkdir(parents=True)
+    wav.write_bytes(b"RIFF....WAVE")
+    conn = open_database(cli_env.db_path)
+    try:
+        repo = ProcessingRepository(conn)
+        stage = repo.start_stage(video.id, Stage.AUDIO, params_hash="p", params={})
+        repo.register_artifact(
+            video_id=video.id,
+            stage_id=stage.id,
+            kind=ArtifactKind.AUDIO_WAV,
+            relpath="x/audio.wav",
+            size_bytes=wav.stat().st_size,
+            sha256=sha256_file(wav),
+            params_hash="p",
+            metadata={},
+        )
+    finally:
+        conn.close()
+    assert cli.main(["artifacts", str(video.id), "--verify"]) == 0
+    assert "audio_wav" in capsys.readouterr().out
+    wav.write_bytes(b"changed")
+    assert cli.main(["artifacts", str(video.id), "--verify"]) == 1
+    assert "MISMATCH OR MISSING" in capsys.readouterr().out
+
+
+def test_new_commands_have_help() -> None:
+    parser = cli.build_parser()
+    for command in ("process", "jobs", "cancel", "artifacts"):
+        with pytest.raises(SystemExit) as info:
+            parser.parse_args([command, "--help"])
+        assert info.value.code == 0
+    args = parser.parse_args(["process", "1", "--stage", "audio", "--stage", "thumbnail"])
+    assert args.stage == ["audio", "thumbnail"]
+    with pytest.raises(SystemExit):
+        parser.parse_args(["process", "1", "--stage", "subtitles"])

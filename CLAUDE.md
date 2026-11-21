@@ -1,234 +1,340 @@
-# CLAUDE.md — IftyEdits AI Studio
+# IftyEdits AI Studio — Project Instructions
 
-Permanent development instructions for every human and AI contributor.
-Read this file fully before changing anything in the repository.
+## 1. Product mission
 
----
+Build **IftyEdits AI Studio**, a reliable, local-first AI-assisted YouTube Shorts clipping and production studio.
 
-## 1. Project vision
+The product should help its owner turn long-form videos into high-quality, engaging, vertical Shorts through a guided workflow:
 
-IftyEdits AI Studio turns long-form videos into publish-ready YouTube Shorts,
-running **locally on an Apple Silicon Mac** with minimal recurring cost.
+1. Import and protect original video files.
+2. Inspect and prepare media.
+3. Transcribe speech with timestamps.
+4. Detect interesting moments using explainable signals.
+5. Generate and rank candidate clips.
+6. Reframe clips into vertical 9:16 videos.
+7. Create and edit captions.
+8. Preview and refine clips.
+9. Generate titles, descriptions, tags and upload metadata.
+10. Run safety, policy and rights checks.
+11. Export finished Shorts.
+12. Optionally upload only after explicit human approval.
+13. Track performance and learn from analytics.
 
-Pipeline (each stage is an independent module):
+This is intended to be a practical personal creator studio, not a demo, mock-up or collection of disconnected screens.
 
-1. Video Import
-2. AI Video Analysis
-3. Transcription
-4. Viral Moment Detection
-5. Clip Scoring
-6. Automatic Shorts Editing
-7. Dynamic Captions
-8. SEO Generation
-9. Copyright and Safety Review
-10. YouTube Publishing
-11. Analytics
+## 2. Product priorities
 
-Guiding goals:
+Prioritize, in this order:
 
-- **Local first.** Process on the machine. Cloud APIs are optional add-ons, never requirements.
-- **Low recurring cost.** Prefer free, open-source tools. Any paid API must be optional and swappable.
-- **No vendor lock-in.** OpusClip, or any similar SaaS, must never be a required dependency.
-- **Originals are sacred.** Imported source media is never modified, moved or overwritten.
+- Reliability and protection of original media.
+- Correctness of video/audio processing.
+- Useful clips rather than arbitrary timestamps.
+- Fast, understandable local workflows.
+- Good vertical composition and readable captions.
+- A polished, coherent user interface.
+- Reproducibility and explainability.
+- Low recurring cost and minimal external dependencies.
+- Safe publishing workflows with human approval.
 
-**Product roadmap:** [docs/ROADMAP.md](docs/ROADMAP.md) defines every phase, its scope,
-acceptance criteria, the recommended order and the progress-tracking format. Read the
-relevant phase there before starting work. This file holds the rules that apply to all phases;
-if the two ever conflict, the rules here win until this file is updated.
+The first target is a high-quality local application for one creator on an Apple Silicon Mac with 32 GB RAM. Do not prematurely design for massive distributed infrastructure.
 
----
+## 3. User and content workflow
 
-## 2. Architecture principles
+The owner runs the IftyEdits YouTube Shorts channel. Content interests include podcast highlights, creator/streamer moments, gaming, challenges, entertainment and motivational content.
 
-- **Modular monolith.** One Python package, `src/iftyedits/`, split into layers:
-  - `core/` — domain models, enums, errors. No I/O, no framework imports.
-  - `storage/` — SQLite access, file layout, original-media vault.
-  - `adapters/` — the only code that talks to external tools (FFmpeg, YouTube API, LLM APIs).
-  - `services/` — one subpackage per pipeline stage. Services depend on `core`, `storage` and adapter *interfaces*.
-  - `pipeline/` — job runner. Stages are idempotent and resumable.
-  - `api/` — FastAPI layer, added only when needed. Must reuse services; never duplicates logic.
-- **UI is thin.** `app/` (Streamlit) calls services. It holds no business logic.
-- **Heavy work runs in the worker.** Streamlit pages only validate input and enqueue jobs
-  (`pipeline/jobs.py`); copying, probing and rendering run in `iftyedits worker`.
-- **Dependencies point inward.** `core` imports nothing from other layers. `services` never imports `app` or `api`.
-- **Swappable backends behind interfaces.** Examples: `Transcriber` (faster-whisper, mlx-whisper), `LLMProvider` (local, API). Choose the backend in config.
-- **Explicit data flow.** Stages read inputs and write outputs to known locations under `data/derived/`, and record results in SQLite.
-- **Apple Silicon optimisation.**
-  - Encode with VideoToolbox (`h264_videotoolbox`, `hevc_videotoolbox`) when quality allows.
-  - Run CPU-heavy work with int8 quantisation or MLX; use process pools for parallel CPU stages.
-  - Analyse downscaled proxies, not full-resolution sources.
-- **Configuration** comes from environment variables / `.env`, loaded in `src/iftyedits/config.py`. No hard-coded paths outside config.
+The application must not assume that a source video is automatically safe to reuse. Copyright permission, platform rules, privacy, harassment, defamation and music rights are separate concerns. Never promise that a clip is copyright-free or guaranteed fair use.
 
----
+The application should help the user make original, meaningful edits and retain human control over final selection and publishing.
 
-## 3. Technology stack
+## 4. Existing technical baseline
+
+The repository has an established Python foundation. Before changing anything, inspect the actual repository and current branch. Do not assume this document describes every current file.
+
+Known baseline after Phase 1A (branch `feat/phase-1a-import`, PR #1):
+
+- Python 3.12, managed with `uv` (never system Python); `uv.lock` committed.
+- Hatchling packaging; the `iftyedits` command is defined in `pyproject.toml`.
+- Ruff linting and formatting.
+- Strict mypy over `src`, `tests`, `scripts` and `app`.
+- pytest with strict markers (`ffmpeg`, `slow`).
+- Existing layers in `src/iftyedits/`: `core`, `storage`, `adapters`, `services`, `pipeline`, `ui`. Streamlit pages live in `app/`.
+- Existing configuration in `config.py` (pydantic-settings, `IFTYEDITS_` environment variables and `.env`).
+- Existing error types in `core/errors.py`.
+- Existing protected-original storage implementation in `storage/originals.py`.
+- Existing SQLite schema with numbered migrations in `storage/migrations/` (currently `0001`, `0002`).
+- Existing SQLite job queue and background worker in `pipeline/`.
+- Existing environment checker in `scripts/check_env.py`.
+- Existing CI (`.github/workflows/ci.yml`) has two jobs: `checks` on `macos-26` (Apple Silicon) runs locked dependency sync, Ruff, formatting, mypy and the non-FFmpeg tests; `integration` on `ubuntu-24.04` runs the FFmpeg and Streamlit server tests with `IFTYEDITS_REQUIRE_FFMPEG=1`.
+- The baseline is 177 passing tests (164 unit/fast, 13 FFmpeg/slow), measured 2026-11-19. Re-run the tests and establish the actual current count before relying on this number.
+- The installed Homebrew FFmpeg lacks `libass`/`freetype` (`subtitles`, `ass` and `drawtext` filters are missing). Caption burn-in must render overlays in Python and use the `overlay` filter, or wait for an approved FFmpeg change.
+
+The implementation roadmap is in `docs/ROADMAP.md`; current status is in `docs/PROGRESS.md`. Update them when implementation changes the plan.
+
+## 5. Architecture principles
+
+Use a modular, testable architecture:
+
+- `core`: domain models, protocols, validation and domain errors.
+- `storage`: database, repositories, migrations and protected original media.
+- `adapters`: FFmpeg, FFprobe, transcription engines and external integrations.
+- `services`: use cases and orchestration.
+- `pipeline`: processing stages and job execution.
+- `ui` (`src/iftyedits/ui/`): display formatting shared by the Streamlit pages. No business logic, no I/O.
+- `app`: Streamlit user interface (`app/Home.py`, `app/views/`). Thin: it validates input, enqueues jobs and reads persisted state.
+- `api`: a FastAPI layer, added only when needed. It must reuse services and never duplicate their logic. It does not exist yet.
+- `scripts`: developer and maintenance commands.
+- `tests`: unit, integration and end-to-end tests.
+
+Dependencies point inward: `core` imports nothing from other layers; `services` never imports `app`, `ui` or `api`. Adapters are the only code that runs external tools.
+
+Keep business logic out of UI code. The UI should call services and read persisted state. Long-running media work must run through a job/worker system, not inside a Streamlit page request.
+
+Prefer standard-library solutions when they are sufficient. Use SQLite initially; do not add a server database without a demonstrated need.
+
+Use numbered SQL migrations and `PRAGMA user_version` unless repository evidence establishes a better existing migration approach.
+
+Use explicit interfaces/protocols for replaceable engines. Avoid unnecessary abstractions and speculative frameworks.
+
+### Technology stack
 
 | Concern | Choice |
 |---|---|
 | Language | Python 3.12 (uv-managed, never system Python) |
-| Package / env manager | uv, local `.venv`, `uv.lock` committed |
+| Package / environment manager | uv, local `.venv`, `uv.lock` committed |
 | Dashboard | Streamlit, bound to `127.0.0.1` |
-| Configuration | pydantic-settings (env vars and `.env`) |
-| Backend API | FastAPI (when needed) |
+| Configuration | pydantic-settings (environment variables and `.env`) |
+| Backend API | FastAPI, only when needed (not added yet) |
 | Storage | SQLite (metadata), filesystem (media) |
-| Video processing | FFmpeg / ffprobe via subprocess (Homebrew build, do not reinstall) |
-| Transcription | faster-whisper (CPU int8); mlx-whisper as optional Metal backend |
-| Scene detection | PySceneDetect |
-| Computer vision | OpenCV |
+| Video processing | FFmpeg / ffprobe via subprocess (Homebrew build; do not reinstall without approval) |
+| Transcription (planned, Phase 1C) | faster-whisper (CPU int8) and mlx-whisper, to be benchmarked |
+| Scene detection (planned, Phase 2A) | PySceneDetect or a justified alternative |
+| Computer vision (planned, Phase 2A) | OpenCV |
 | Lint / format | Ruff |
 | Type checking | mypy (strict) |
 | Tests | pytest |
 
-Add a dependency only when a task needs it. Justify each new dependency in the commit message.
-Pin AI model versions in config; never download model weights into the repository.
+Planned entries are not installed. Add a dependency only when a task needs it, after the checks in section 8.
 
-Known environment limitation: the installed FFmpeg lacks `libass`/`freetype`
-(`subtitles`, `ass`, `drawtext` filters are missing). Caption burn-in must either
-render overlays in Python and use the `overlay` filter, or wait for an approved FFmpeg change.
+External processes: use `subprocess.run([...])` with an argument list and explicit timeouts. Never use `shell=True`. Use `pathlib.Path` for paths.
 
----
+## 6. Non-negotiable safety rules
 
-## 4. Coding standards
+- Never overwrite, modify, move, rename, delete or hard-link a user's original source media.
+- Import originals into a protected vault and verify their SHA-256 hashes.
+- All generated files must live in designated derived/export directories.
+- Reject path traversal and unsafe symlink destinations.
+- Do not follow untrusted paths outside approved storage roots.
+- Never silently discard a source file after an error.
+- A failed database write must not destroy an already-imported original.
+- Detect and recover from interrupted imports without creating misleading database records.
+- Do not automatically delete original media, even when storage is low.
+- Never store credentials, API keys, OAuth tokens or secrets in Git.
+- Never upload to YouTube or another service without explicit user approval for that upload.
+- Never publish, schedule or make a video public automatically.
+- Never bypass platform safety checks or claim that automated checks guarantee policy compliance.
+- Never weaken, delete, skip or falsify a test merely to make CI green.
+- Never use `--no-verify`, suppress errors, or hide failing tests to claim success.
+- Never push, deploy, release or publish without explicit user approval.
 
-- Python 3.12 features are allowed. Use `from __future__ import annotations` in modules.
-- Full type hints everywhere. `mypy --strict` must pass for `src/`.
-- Ruff lint and format must pass. Line length 100.
-- Use `pathlib.Path`, never string paths.
-- Use `subprocess.run([...], check=True)` with an argument list. **Never** `shell=True`.
-- Small, pure functions where possible. Side effects live in adapters and storage.
-- Raise domain errors from `iftyedits.core.errors`; do not swallow exceptions.
-- Use `logging`, never `print`, in library code. Never log secrets or full user file contents.
-- Docstrings for every public module, class and function: what, not how.
-- No dead code, no commented-out code, no speculative abstractions.
-- Names: `snake_case` functions and modules, `PascalCase` classes, `UPPER_CASE` constants.
+If a destructive, irreversible, paid, external or security-sensitive action is necessary, stop and request human approval.
 
----
+How the current code enforces these rules (`storage/originals.py`, `services/ingest.py` and their tests; do not bypass them):
 
-## 5. Testing requirements
+- Imports are independent byte copies, hashed with SHA-256 in the same pass as the copy. The import is rejected if the source's size or modification time changes during the copy.
+- Copies are written to `data/staging/`, made read-only (mode `0444`) and moved into `data/originals/<sha[:2]>/` under a lock. An existing vault file is never replaced.
+- Generated output must live under `data/derived/` or `data/exports/` and pass `assert_safe_output_path()` before it is written.
+- Automatic cleanup is limited to abandoned `*.partial` files in `data/staging/`. Nothing automated touches `data/originals/`.
+- If the database write fails, the vault copy is kept and `iftyedits reconcile` records it.
+- Streamlit binds to `127.0.0.1` by default. Any future local server must do the same.
 
-- Every feature ships with tests. Every bug fix ships with a regression test.
-- Layout: `tests/unit/` (fast, no external tools), `tests/integration/` (FFmpeg, models, DB).
-- Mark tests that need FFmpeg with `@pytest.mark.ffmpeg`, slow ones with `@pytest.mark.slow`.
-- Tests use `tmp_path`. Tests must **never** touch the real `data/` directory.
-- Media fixtures: tiny files only (< 1 MB), generated at test time where possible.
-- Required checks before any commit:
+## 7. Engineering standards
+
+- Inspect before editing. Understand callers, tests and data flow.
+- Make small, cohesive, reviewable changes.
+- Add or update tests with every meaningful behavior change.
+- Test success cases, failure cases, edge cases and security boundaries.
+- Use type hints and satisfy strict mypy.
+- Keep Ruff lint and format checks clean.
+- Use clear domain-specific errors and actionable messages.
+- Avoid broad exception handling that hides the cause of failure.
+- Avoid global mutable state.
+- Make processing deterministic where practical.
+- Make jobs restartable and idempotent where practical.
+- Record stage status, progress, errors and timestamps.
+- Log useful diagnostic information without leaking secrets or private content.
+- Do not add a dependency until its purpose, compatibility, maintenance and platform support have been checked.
+- Pin and lock dependencies using the repository's established `uv` workflow.
+- Check official documentation for APIs and version-sensitive behavior.
+- Do not invent APIs, command-line flags, model capabilities or compatibility claims.
+
+## 8. Research and dependency selection
+
+Before introducing a major library, model or external service:
+
+1. Identify the exact requirement.
+2. Compare credible alternatives.
+3. Check official documentation and supported platforms.
+4. Verify Python 3.12 and Apple Silicon compatibility.
+5. Check transitive dependencies and conflicts.
+6. Consider model download size, RAM, disk and inference speed.
+7. Consider licensing and redistribution constraints.
+8. Prefer local/offline processing where practical.
+9. Record the decision and trade-offs in `docs/DECISIONS.md`.
+
+Do not add multiple competing implementations of the same capability without a demonstrated reason.
+
+## 9. Performance and hardware constraints
+
+Primary development and runtime target: Apple Silicon Mac, M1 Max, 32 GB RAM, macOS.
+
+- Avoid loading entire large videos into application memory.
+- Prefer file paths and streaming/chunked processing.
+- Serialize memory-heavy tasks when appropriate.
+- Provide progress and cancellation for long jobs.
+- Benchmark transcription and video processing on representative files.
+- Treat faster-whisper CPU and MLX-based inference as alternatives to benchmark, not assumptions.
+- Keep optional model dependencies optional.
+- Provide graceful behavior when FFmpeg, FFprobe, models or hardware acceleration are unavailable.
+- Never claim hardware acceleration is active without detecting and verifying it.
+- Encode with VideoToolbox (`h264_videotoolbox`, `hevc_videotoolbox`) when it is detected, verified and quality allows; otherwise fall back to a reliable software encoder such as `libx264`.
+- Run CPU-heavy inference with int8 quantisation or MLX where benchmarks justify it.
+- Analyse downscaled proxies, not full-resolution sources, where accuracy allows.
+
+## 10. User interface standards
+
+Build a polished, coherent creator studio, not a generic admin dashboard.
+
+The interface should make the workflow understandable:
+
+- Library
+- Import
+- Video details
+- Processing/jobs
+- Transcript
+- Candidate clips
+- Clip editor
+- Captions
+- Preview
+- SEO/metadata
+- Safety review
+- Export
+- Settings
+
+Use clear status indicators, useful empty states, actionable errors, progress feedback and confirmation before risky actions.
+
+Do not create decorative controls that do nothing. Every visible action must work or be clearly marked as unavailable.
+
+Keep the interface responsive and accessible. Do not block the UI while processing media.
+
+## 11. Testing and verification
+
+After each meaningful implementation unit, run the relevant tests.
+
+Before declaring a phase complete, run all applicable checks:
 
 ```bash
+uv sync --locked
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy
 uv run pytest
 ```
 
----
+`docs/TESTING.md` documents these commands, test markers, FFmpeg requirements and CI. Use the exact commands supported by the current repository; inspect `pyproject.toml` and CI if uncertain.
 
-## 6. Git workflow
+Add FFmpeg integration tests using generated test media where practical. Mark them `@pytest.mark.ffmpeg` (and slow tests `@pytest.mark.slow`). Tests use `tmp_path` and must never touch the real `data/` directory. Tests must not depend on private user videos.
 
-- Default branch: `main`. Keep it green.
-- Work on short-lived branches: `feat/<topic>`, `fix/<topic>`, `chore/<topic>`, `docs/<topic>`.
-- Conventional Commits: `feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`.
-- One logical change per commit. Run all checks before committing.
-- Review `git status` and `git diff --staged` before every commit.
-- Never force-push `main`. Never rewrite published history.
-- Never commit: `.env*` (except `.env.example`), API keys, tokens, OAuth client secrets,
-  `.venv/`, video/audio files, database files, model weights, generated media, anything under `data/` except `.gitkeep`.
+Test source preservation and hash integrity. Test malformed media, missing audio, unusual frame rates, rotations, path traversal, symlinks, duplicate imports, disk errors and interrupted jobs as relevant.
 
----
+If a tool or dependency is unavailable, report the limitation. Do not report an unrun test as passed.
 
-## 7. Security requirements
+## 12. Execution workflow
 
-- Secrets live only in `.env` (git-ignored) or the macOS Keychain. `.env.example` holds placeholder names only.
-- Never print, log, commit or paste secrets into prompts, issues or PRs.
-- Never put secrets or personal data in URLs or query strings.
-- Validate and resolve every user-supplied path. Reject path traversal and writes outside `data/`.
-- External processes: argument lists only, no shell interpolation, explicit timeouts for long jobs.
-- Bind local servers (Streamlit, FastAPI) to `127.0.0.1` by default.
-- OAuth tokens (YouTube) are stored outside the repository with `0600` permissions.
-- New third-party dependencies must be well-known and actively maintained.
+Follow `docs/ROADMAP.md` in dependency order.
 
----
+For every task:
 
-## 8. Data protection requirements
+1. Inspect the current implementation and Git status.
+2. Identify the smallest useful next task.
+3. State the acceptance criteria.
+4. Research unfamiliar or version-sensitive technical decisions.
+5. Implement the task.
+6. Add or update tests.
+7. Run the relevant checks.
+8. Review the diff for correctness, security and scope.
+9. Update `docs/ROADMAP.md` if the plan changed, and record decisions in `docs/DECISIONS.md`.
+10. Record remaining issues and the next task in `docs/PROGRESS.md`.
 
-These rules are enforced by `iftyedits.storage.originals` and its tests. Do not bypass them.
+Do not rebuild working features unnecessarily. Reconcile the roadmap against the real repository before every phase.
 
-1. **Imports are independent copies.** Never move, hard-link or symlink a user's source file.
-2. **Every original gets a SHA-256 hash** at import, computed in the same single pass that copies it. The import is rejected if the source's size or modification time changes during the copy.
-3. **Originals are read-only.** Vault copies are set to mode `0444` and stored under `data/originals/`.
-4. **Never overwrite.** Copies are written exclusively to `data/staging/` and moved into the vault under a lock; an existing vault file is never replaced. Identical content is stored once, whatever its name or extension.
-5. **Generated files live separately** under `data/derived/` or `data/exports/`. Use `assert_safe_output_path()` before writing any output.
-6. **The source file is opened read-only** and must be byte-identical after import.
-7. **Deletion of originals** happens only through an explicit, user-confirmed action. No automated cleanup may touch `data/originals/`. Cleanup of interrupted imports is limited to `*.partial` files in `data/staging/`.
-8. **Database failures never lose originals.** The vault copy is kept and `iftyedits reconcile` records it.
-9. User media, transcripts and analytics stay on this machine unless the user explicitly publishes them.
+If blocked by missing credentials, external approval, unavailable hardware, unavailable services or ambiguous product decisions, implement independent work that can safely proceed and record the blocker. Do not fabricate success.
 
----
+## 13. Git rules
 
-## 9. AI development team
+- Work on the approved feature branch.
+- Check `git status` before making changes.
+- Do not overwrite or discard unrelated user changes.
+- Do not reset, clean, force-push or rewrite history.
+- Do not commit or push unless the user explicitly authorizes it.
+- Keep changes organized and report the exact modified files.
+- Preserve the existing CI and branch history.
+- Use short-lived branches (`feat/<topic>`, `fix/<topic>`, `chore/<topic>`, `docs/<topic>`) and Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`).
+- Never commit `.env*` (except `.env.example`), secrets, `.venv/`, media, databases, model weights or anything under `data/` except `.gitkeep`.
 
-| Model | Role |
-|---|---|
-| Opus 5.5 | Architecture, complex engineering, code reviews |
-| Sonnet 5.5 | Regular implementation and testing |
-| Fable 5.2 | Unusually difficult reasoning problems |
-| Haiku 5.5 | Lightweight tasks (renames, docs, small edits) |
+## 14. Definition of done
 
-Architectural decisions and reviews of data-protection or security code go to Opus 5.5.
+A feature is done only when:
 
----
+- Its intended behavior exists and is connected to the actual application.
+- It has meaningful tests.
+- Relevant tests pass.
+- Types, lint and formatting pass.
+- Errors and edge cases are handled.
+- Documentation is updated.
+- No placeholder or fake functionality is presented as complete.
+- The diff has been reviewed.
+- Remaining limitations are documented.
 
-## 10. Ralph Loop operating rules
+A phase is not complete because its UI exists or because code was generated. It is complete only when its acceptance criteria are verified.
 
-The Ralph Loop plugin (Anthropic directory, `ralph-loop`) re-runs one prompt until a
-completion promise appears or an iteration limit is hit. Use it only under these rules:
+## 15. Project documents
 
-1. **Bounded tasks only.** One task, one module or feature slice, independently testable.
-   Never use it for architecture, migrations, security code or anything touching `data/originals/`.
-2. **Always set limits:** `--max-iterations` (default 10, maximum 25) and `--completion-promise`.
-3. **Objective exit criteria.** The prompt must name the exact commands that prove completion,
-   normally `uv run ruff check .`, `uv run mypy` and `uv run pytest <scope>`.
-4. **Promise only when true.** Output the completion promise only when every check passes. Never weaken, skip or delete tests to reach it.
+Maintain these documents:
+
+- `docs/ROADMAP.md` — phases, dependencies and acceptance criteria.
+- `docs/PROGRESS.md` — current status, completed tasks, test results and next task.
+- `docs/DECISIONS.md` — important technical decisions and trade-offs.
+- `docs/TESTING.md` — how to run tests and integration checks.
+- `docs/USER_GUIDE.md` — how to use the application as currently implemented.
+- `README.md` — overview, setup, CLI and configuration reference.
+
+Keep these documents accurate. Update them as the implementation evolves. Document only implemented behaviour as available; mark planned features as planned.
+
+### Precedence when instructions conflict
+
+Decision D11 in `docs/DECISIONS.md` records: "`CLAUDE.md` holds rules for all phases; `docs/ROADMAP.md` holds phases and acceptance criteria; `docs/PROGRESS.md` tracks status. Rules in `CLAUDE.md` win on conflict."
+
+`docs/DECISIONS.md` itself states: "Do not rewrite past entries; add a new one that supersedes them."
+
+## 16. Ralph Loop operating rules
+
+The Ralph Loop plugin (`/ralph-loop`) re-runs one prompt until a completion promise appears or an iteration limit is reached. Use it only under these rules:
+
+1. **Bounded tasks only.** One task, one module or feature slice, independently testable. Never use it for architecture, migrations, security code or anything touching `data/originals/`.
+2. **Always set limits:** `--max-iterations` (maximum 25) and `--completion-promise`.
+3. **Objective exit criteria.** The prompt names the exact commands that prove completion, normally `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` and `uv run pytest <scope>`.
+4. **Promise only when true.** Output the completion promise only when every check passes. Never weaken, skip, delete or falsify tests to reach it.
 5. **Scope fence.** The prompt lists the files the loop may change. Changes outside them are not allowed.
-6. **No destructive actions** inside a loop: no `git push`, no `git reset --hard`, no deleting files outside the scope, no dependency installs unless the prompt allows them.
-7. **Work on a branch.** Commit at the end only, after a human or Opus review of the diff.
-8. **Stop early** with `/cancel-ralph` if the loop repeats the same failure three times.
+6. **No destructive actions:** no `git reset`, `git clean`, `git stash`, branch switching, history rewriting or force-push; no deleting files outside the scope; no dependency installs unless the prompt allows them.
+7. **No automatic commit or push.** The loop never commits, pushes, merges, stages or unstages unless the user explicitly approves that action.
+8. **Stop after three repeated failures.** If the same failure repeats three times, cancel the loop and report it.
+9. **Human review before committing.** A human reviews the diff before anything produced by a loop is committed.
 
 Prompt template:
 
 ```text
 /ralph-loop "Implement <task> in <files>. Requirements: <list>.
-Done when: uv run ruff check . && uv run mypy && uv run pytest tests/unit/<scope> all pass.
-Do not modify files outside <files>. Do not touch data/originals.
+Done when: uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest tests/unit/<scope> all pass.
+Only modify <files>. Do not touch data/. Do not commit, push or stage.
 When all checks pass, output <promise>TASK_DONE</promise>." --max-iterations 10 --completion-promise "TASK_DONE"
-```
-
----
-
-## 11. Definition of done (every feature)
-
-A feature is done only when **all** of the following hold:
-
-- [ ] Code is in the correct layer and respects the dependency direction.
-- [ ] Public functions have type hints and docstrings.
-- [ ] Unit tests cover the normal path, edge cases and failure modes.
-- [ ] Integration test exists if the feature calls FFmpeg, a model or the database.
-- [ ] `ruff check`, `ruff format --check`, `mypy` and `pytest` all pass.
-- [ ] Original-media protection tests still pass; no code writes to `data/originals/` outside the vault.
-- [ ] No secrets, media, databases or model weights are staged.
-- [ ] New config keys are documented in `.env.example` and the README.
-- [ ] New dependencies are justified in the commit message.
-- [ ] The diff has been reviewed before commit.
-- [ ] The phase's acceptance criteria in [docs/ROADMAP.md](docs/ROADMAP.md) are met and progress is recorded there.
-
----
-
-## 12. Common commands
-
-```bash
-uv sync                       # create/refresh .venv from uv.lock
-uv run pytest                 # run tests
-uv run ruff check . --fix     # lint and autofix
-uv run ruff format .          # format
-uv run mypy                   # type check
-uv run python scripts/check_env.py   # verify local toolchain
 ```

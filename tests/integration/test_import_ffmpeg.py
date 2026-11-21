@@ -160,7 +160,7 @@ def test_cli_import_list_check_reconcile(
     assert "h264" in shown
 
     assert cli.main(["check"]) == 0
-    assert "schema v2" in capsys.readouterr().out
+    assert "schema v4" in capsys.readouterr().out
 
     assert cli.main(["reconcile"]) == 0
     assert "Adopted 0 file(s)." in capsys.readouterr().out

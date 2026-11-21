@@ -32,3 +32,17 @@ def test_absolute_env_paths_are_used(tmp_path: Path) -> None:
 def test_invalid_log_level_raises(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         Settings.from_env({"IFTYEDITS_LOG_LEVEL": "loud"}, base_dir=tmp_path)
+
+
+def test_processing_settings(tmp_path: Path) -> None:
+    defaults = Settings.from_env({}, base_dir=tmp_path)
+    assert (defaults.ffmpeg_path, defaults.proxy_encoder) == ("ffmpeg", "auto")
+    assert defaults.ffmpeg_timeout_s == 6 * 3600
+    custom = Settings.from_env(
+        {"IFTYEDITS_PROXY_ENCODER": "libx264", "IFTYEDITS_FFMPEG_TIMEOUT_S": "90"},
+        base_dir=tmp_path,
+    )
+    assert (custom.proxy_encoder, custom.ffmpeg_timeout_s) == ("libx264", 90.0)
+    for name, value in (("PROXY_ENCODER", "nvenc"), ("FFMPEG_TIMEOUT_S", "0")):
+        with pytest.raises(ValueError):
+            Settings.from_env({f"IFTYEDITS_{name}": value}, base_dir=tmp_path)

@@ -11,10 +11,12 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+EncoderPreference = Literal["auto", "h264_videotoolbox", "libx264"]
+ComputeType = Literal["int8", "int8_float32", "float32"]
 
 DEFAULT_VIDEO_EXTENSIONS = (
     ".mp4",
@@ -50,13 +52,35 @@ class Settings(BaseSettings):
     log_level: LogLevel = "INFO"
     ffprobe_path: str = "ffprobe"
     probe_timeout_s: float = 60.0
+    ffmpeg_path: str = "ffmpeg"
+    ffmpeg_timeout_s: float = Field(default=6 * 3600.0, gt=0)
+    proxy_encoder: EncoderPreference = "auto"
     min_free_bytes: int = 2 * 1024**3
+    transcription_model: str = "small"
+    transcription_language: str = "auto"
+    transcription_compute_type: ComputeType = "int8"
+    transcription_cpu_threads: int = Field(default=0, ge=0, le=64)
+    transcription_beam_size: int = Field(default=5, ge=1, le=10)
+    transcription_vad: bool = True
+    transcription_word_timestamps: bool = True
+    transcription_timeout_s: float = Field(default=6 * 3600.0, gt=0)
     video_extensions: Annotated[tuple[str, ...], NoDecode] = DEFAULT_VIDEO_EXTENSIONS
 
     @field_validator("log_level", mode="before")
     @classmethod
     def _upper_log_level(cls, value: object) -> object:
         return value.upper() if isinstance(value, str) else value
+
+    @field_validator("transcription_language", mode="before")
+    @classmethod
+    def _check_language(cls, value: object) -> object:
+        if isinstance(value, str):
+            value = value.strip().lower() or "auto"
+            if value != "auto" and not (
+                value.isascii() and value.isalpha() and 2 <= len(value) <= 3
+            ):
+                raise ValueError("transcription_language must be 'auto' or a code such as 'en'")
+        return value
 
     @field_validator("video_extensions", mode="before")
     @classmethod

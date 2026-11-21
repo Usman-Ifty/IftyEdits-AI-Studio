@@ -15,16 +15,33 @@ from pathlib import Path
 from types import FrameType
 
 from iftyedits import __version__
+from iftyedits.adapters.faster_whisper import engine_version
+from iftyedits.adapters.ffmpeg import FFmpeg
 from iftyedits.adapters.ffprobe import FFprobe
+from iftyedits.adapters.model_store import build_model_store
 from iftyedits.config import Settings, project_home
 from iftyedits.core.errors import IftyEditsError
+from iftyedits.core.models import ALL_STAGES, CancelOutcome, ModelState, Stage
 from iftyedits.pipeline.jobs import JobQueue
 from iftyedits.pipeline.worker import Worker
 from iftyedits.services.ingest import IngestService, build_vault, discover, validate_source
+from iftyedits.services.subtitles import EXPORT_FORMATS, export
+from iftyedits.services.transcription import options_from_settings, transcription_blocker
 from iftyedits.storage.db import open_database, schema_version
-from iftyedits.storage.originals import ProgressCallback, sha256_file
+from iftyedits.storage.originals import ProgressCallback, assert_safe_output_path, sha256_file
+from iftyedits.storage.processing import ProcessingRepository
+from iftyedits.storage.transcripts import TranscriptRepository
 from iftyedits.storage.videos import VideoRepository
-from iftyedits.ui.formatting import human_duration, human_size, stream_row
+from iftyedits.ui.formatting import (
+    human_duration,
+    human_size,
+    job_row,
+    model_row,
+    search_row,
+    stage_row,
+    stream_row,
+    transcript_facts,
+)
 
 logger = logging.getLogger("iftyedits")
 
@@ -115,9 +132,225 @@ def cmd_enqueue(settings: Settings, args: argparse.Namespace) -> int:
         except IftyEditsError as exc:
             print(f"skip  {path}: {exc}", file=sys.stderr)
     with closing(open_database(settings.db_path)) as conn:
-        ids = JobQueue(conn).enqueue_imports(files)
+        ids = JobQueue(conn).enqueue_imports(files, process_after=args.process)
     print(f"Queued {len(ids)} job(s); {len(files) - len(ids)} already queued.")
     return EXIT_OK if files else EXIT_FAILED
+
+
+def cmd_process(settings: Settings, args: argparse.Namespace) -> int:
+    """Queue media preparation (audio, proxy, thumbnail) for imported videos."""
+    stages = [Stage(s) for s in args.stage] if args.stage else list(ALL_STAGES)
+    with closing(open_database(settings.db_path)) as conn:
+        repo = VideoRepository(conn)
+        if args.all:
+            videos = repo.list_recent(limit=1_000_000)
+        elif args.videos:
+            videos = [repo.resolve_reference(ref) for ref in args.videos]
+        else:
+            print("Name one or more videos, or use --all.", file=sys.stderr)
+            return EXIT_USAGE
+        queue = JobQueue(conn)
+        for video in videos:
+            job_id, created = queue.enqueue_processing(video.id, stages, force=args.force)
+            state = "queued" if created else "already queued"
+            print(f"job {job_id:<5} {state:<15} #{video.id}  {video.original_filename}")
+    if not videos:
+        print("No videos imported yet.")
+    return EXIT_OK
+
+
+def cmd_jobs(settings: Settings, args: argparse.Namespace) -> int:
+    """Print recent (or only active) jobs."""
+    with closing(open_database(settings.db_path)) as conn:
+        queue = JobQueue(conn)
+        jobs = queue.list_active() if args.active else queue.list_recent(args.limit)
+    for job in jobs:
+        row = job_row(job)
+        print(
+            f"{job.id:<5} {job.kind:<13} {row['Status']:<17} {job.progress * 100:5.1f}%  "
+            f"{row['File']}  {row['Detail']}".rstrip()
+        )
+    if not jobs:
+        print("No active jobs." if args.active else "No jobs yet.")
+    return EXIT_OK
+
+
+def cmd_cancel(settings: Settings, args: argparse.Namespace) -> int:
+    """Cancel queued jobs or ask the worker to stop running ones."""
+    failed = False
+    with closing(open_database(settings.db_path)) as conn:
+        queue = JobQueue(conn)
+        for job_id in args.job_ids:
+            outcome = queue.request_cancel(job_id)
+            text = {
+                CancelOutcome.CANCELLED: "cancelled",
+                CancelOutcome.REQUESTED: "cancellation requested; the worker will stop it",
+                CancelOutcome.NOT_ACTIVE: "already finished; nothing to cancel",
+                CancelOutcome.NOT_FOUND: "no such job",
+            }[outcome]
+            failed = failed or outcome is CancelOutcome.NOT_FOUND
+            print(f"job {job_id}: {text}")
+    return EXIT_FAILED if failed else EXIT_OK
+
+
+def cmd_artifacts(settings: Settings, args: argparse.Namespace) -> int:
+    """Print processing stages and generated files for one video."""
+    with closing(open_database(settings.db_path)) as conn:
+        video = VideoRepository(conn).resolve_reference(args.video)
+        processing = ProcessingRepository(conn)
+        stages = processing.stages(video.id)
+        artifacts = processing.artifacts(video.id)
+    print(f"video       #{video.id}  {video.original_filename}")
+    print("stages")
+    if not stages:
+        print("  none yet (run `iftyedits process` to prepare this video)")
+    for stage in stages:
+        row = stage_row(stage)
+        print(
+            f"  {row['Stage']:<10} {row['Status']:<10} {row['Finished (UTC)']:<20} {row['Detail']}"
+        )
+    print("artifacts")
+    intact = True
+    for artifact in artifacts:
+        path = settings.derived_dir / artifact.relpath
+        line = f"  {artifact.kind.value:<14} {human_size(artifact.size_bytes):>9}  {path}"
+        if args.verify:
+            ok = path.is_file() and sha256_file(path) == artifact.sha256
+            intact = intact and ok
+            line += "  OK" if ok else "  MISMATCH OR MISSING"
+        print(line)
+    if not artifacts:
+        print("  none")
+    return EXIT_OK if intact else EXIT_FAILED
+
+
+def cmd_models(settings: Settings, args: argparse.Namespace) -> int:
+    """List speech models, or download / verify one."""
+    store = build_model_store(settings)
+    if args.action == "list":
+        print(f"models dir  {store.root}")
+        for status in store.statuses():
+            row = model_row(status)
+            print(
+                f"  {row['Model']:<15} {row['Status']:<18} {row['Download']:>9}  "
+                f"RAM ~{row['RAM (approx.)']:<7} {row['Notes']}"
+            )
+        print(f"default     {settings.transcription_model}")
+        return EXIT_OK
+    if not args.name:
+        print("Name a model, for example: iftyedits models download small", file=sys.stderr)
+        return EXIT_USAGE
+    if args.action == "verify":
+        ok = store.verify(args.name)
+        print(f"{args.name}: {'OK' if ok else 'MISSING, INCOMPLETE OR DAMAGED'}")
+        return EXIT_OK if ok else EXIT_FAILED
+    spec = store.spec(args.name)
+    if store.status(args.name).state is ModelState.INSTALLED:
+        print(f"{args.name} is already installed in {store.path(args.name)}")
+        return EXIT_OK
+    print(
+        f"Downloading {spec.name} ({human_size(spec.size_bytes)}) from "
+        f"huggingface.co/{spec.repo_id} @ {spec.revision[:12]} into {store.root}",
+        file=sys.stderr,
+    )
+    state = {"last": -1}
+
+    def report(done: int, total: int) -> None:
+        percent = int(done * 100 / total) if total else 100
+        if percent != state["last"]:
+            state["last"] = percent
+            print(f"\r  {percent:3d}%  {human_size(done)} of {human_size(total)}", end="",
+                  file=sys.stderr, flush=True)  # fmt: skip
+
+    status = store.install(args.name, progress=report)
+    print(f"\n{status.spec.name} installed and verified in {status.path}")
+    return EXIT_OK
+
+
+def cmd_transcribe(settings: Settings, args: argparse.Namespace) -> int:
+    """Queue transcription of imported videos."""
+    options = options_from_settings(settings, model=args.model, language=args.language)
+    store = build_model_store(settings)
+    store.spec(options.model)
+    with closing(open_database(settings.db_path)) as conn:
+        repo = VideoRepository(conn)
+        if args.all:
+            videos = repo.list_recent(limit=1_000_000)
+        elif args.videos:
+            videos = [repo.resolve_reference(ref) for ref in args.videos]
+        else:
+            print("Name one or more videos, or use --all.", file=sys.stderr)
+            return EXIT_USAGE
+        if store.status(options.model).state is not ModelState.INSTALLED:
+            print(
+                f"Model {options.model} is not downloaded. Run "
+                f"`iftyedits models download {options.model}` first.",
+                file=sys.stderr,
+            )
+            return EXIT_FAILED
+        queue = JobQueue(conn)
+        for video in videos:
+            has_audio = any(s.codec_type == "audio" for s in repo.streams(video.id))
+            blocker = transcription_blocker(video, has_audio)
+            if blocker is not None:
+                print(f"skip  #{video.id}  {video.original_filename}: {blocker}")
+                continue
+            job_id, created = queue.enqueue_transcription(
+                video.id, model=options.model, language=options.language, force=args.force
+            )
+            state = "queued" if created else "already queued"
+            print(f"job {job_id:<5} {state:<15} #{video.id}  {video.original_filename}")
+    if not videos:
+        print("No videos imported yet.")
+    return EXIT_OK
+
+
+def cmd_transcript(settings: Settings, args: argparse.Namespace) -> int:
+    """Print (or save under data/exports) the current transcript of a video."""
+    with closing(open_database(settings.db_path)) as conn:
+        video = VideoRepository(conn).resolve_reference(args.video)
+        repo = TranscriptRepository(conn)
+        transcript = repo.current(video.id)
+        if transcript is None:
+            print(
+                f"Video #{video.id} has no transcript yet. Run `iftyedits transcribe {video.id}`.",
+                file=sys.stderr,
+            )
+            return EXIT_FAILED
+        segments = repo.segments(transcript.id)
+    text = export(args.format, transcript, segments)
+    if args.save:
+        name = f"{Path(video.original_filename).stem}-{transcript.model}.{args.format}"
+        folder = settings.exports_dir / "transcripts" / video.sha256[:12]
+        target = assert_safe_output_path(
+            folder / name,
+            originals_root=settings.originals_dir,
+            allowed_roots=(settings.exports_dir,),
+        )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+        print(f"Saved {target}")
+        return EXIT_OK
+    if args.format == "txt":
+        for key, value in transcript_facts(transcript).items():
+            print(f"# {key}: {value}", file=sys.stderr)
+    sys.stdout.write(text)
+    return EXIT_OK
+
+
+def cmd_search(settings: Settings, args: argparse.Namespace) -> int:
+    """Search the current transcripts of all (or one) videos."""
+    with closing(open_database(settings.db_path)) as conn:
+        video_id = None
+        if args.video:
+            video_id = VideoRepository(conn).resolve_reference(args.video).id
+        hits = TranscriptRepository(conn).search(args.query, video_id=video_id, limit=args.limit)
+    for hit in hits:
+        row = search_row(hit)
+        print(f"{row['Video']}  {row['Start']} - {row['End']}  {row['Match']}")
+    if not hits:
+        print("No matches.")
+    return EXIT_OK
 
 
 def cmd_worker(settings: Settings, args: argparse.Namespace) -> int:
@@ -206,7 +439,7 @@ def cmd_reconcile(settings: Settings, args: argparse.Namespace) -> int:
 
 
 def cmd_check(settings: Settings, args: argparse.Namespace) -> int:
-    """Verify configuration, ffprobe and the database."""
+    """Verify configuration, ffprobe, ffmpeg capabilities, the database and workers."""
     ok = True
     print(f"iftyedits   {__version__}")
     print(f"data dir    {settings.data_dir}")
@@ -216,6 +449,30 @@ def cmd_check(settings: Settings, args: argparse.Namespace) -> int:
     except IftyEditsError as exc:
         ok = False
         print(f"ffprobe     FAIL: {exc}")
+    try:
+        caps = FFmpeg(settings.ffmpeg_path, encoder=settings.proxy_encoder).capabilities()
+    except IftyEditsError as exc:
+        ok = False
+        print(f"ffmpeg      FAIL: {exc}")
+    else:
+        print(f"ffmpeg      {caps.binary}  ({caps.version})")
+        if caps.h264 is not None:
+            kind = "hardware, verified" if caps.h264.hardware else "software"
+            print(f"h264        {caps.h264.name} ({kind}; {caps.h264.reason})")
+        for item in caps.missing:
+            ok = False
+            print(f"missing     {item}")
+    version = engine_version()
+    print(f"whisper     faster-whisper {version} (CPU)" if version else "whisper     NOT INSTALLED")
+    ok = ok and version is not None
+    store = build_model_store(settings)
+    installed = [s.spec.name for s in store.statuses() if s.state is ModelState.INSTALLED]
+    print(f"models      {store.root}  installed: {', '.join(installed) or 'none'}")
+    if settings.transcription_model not in installed:
+        print(
+            f"note        default model {settings.transcription_model} is not downloaded "
+            f"(`iftyedits models download {settings.transcription_model}`)"
+        )
     with closing(open_database(settings.db_path)) as conn:
         print(f"database    {settings.db_path} (schema v{schema_version(conn)})")
         workers = JobQueue(conn).live_workers()
@@ -278,11 +535,69 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("enqueue", help="queue files or folders for the background worker")
     p.add_argument("paths", nargs="+")
     p.add_argument("-r", "--recursive", action="store_true", help="include subfolders")
+    p.add_argument(
+        "--process",
+        action="store_true",
+        help="prepare media (audio, proxy, thumbnail) after each import",
+    )
     p.set_defaults(func=cmd_enqueue)
 
     p = sub.add_parser("worker", help="run the background job worker")
     p.add_argument("--once", action="store_true", help="exit when the queue is empty")
     p.set_defaults(func=cmd_worker)
+
+    p = sub.add_parser("process", help="queue media preparation for imported videos")
+    p.add_argument("videos", nargs="*", help="video ids or SHA-256 prefixes")
+    p.add_argument("--all", action="store_true", help="every imported video")
+    p.add_argument(
+        "--stage",
+        action="append",
+        choices=[s.value for s in ALL_STAGES],
+        help="run only this stage (repeatable; default: all stages)",
+    )
+    p.add_argument(
+        "--force", action="store_true", help="regenerate outputs even if valid ones exist"
+    )
+    p.set_defaults(func=cmd_process)
+
+    p = sub.add_parser("jobs", help="list background jobs")
+    p.add_argument("--limit", type=int, default=30)
+    p.add_argument("--active", action="store_true", help="only queued and running jobs")
+    p.set_defaults(func=cmd_jobs)
+
+    p = sub.add_parser("cancel", help="cancel queued or running jobs")
+    p.add_argument("job_ids", nargs="+", type=int, metavar="JOB_ID")
+    p.set_defaults(func=cmd_cancel)
+
+    p = sub.add_parser("artifacts", help="show processing stages and generated files of a video")
+    p.add_argument("video", help="video id (e.g. 3) or SHA-256 prefix (at least 6 characters)")
+    p.add_argument("--verify", action="store_true", help="re-hash every generated file")
+    p.set_defaults(func=cmd_artifacts)
+
+    p = sub.add_parser("models", help="list, download or verify speech models")
+    p.add_argument("action", nargs="?", default="list", choices=["list", "download", "verify"])
+    p.add_argument("name", nargs="?", help="model name, e.g. small")
+    p.set_defaults(func=cmd_models)
+
+    p = sub.add_parser("transcribe", help="queue transcription of imported videos")
+    p.add_argument("videos", nargs="*", help="video ids or SHA-256 prefixes")
+    p.add_argument("--all", action="store_true", help="every imported video")
+    p.add_argument("--model", help="speech model (default: IFTYEDITS_TRANSCRIPTION_MODEL)")
+    p.add_argument("--language", help="language code such as en, or auto (default: setting)")
+    p.add_argument("--force", action="store_true", help="transcribe again even if unchanged")
+    p.set_defaults(func=cmd_transcribe)
+
+    p = sub.add_parser("transcript", help="print or save the current transcript of a video")
+    p.add_argument("video", help="video id or SHA-256 prefix")
+    p.add_argument("--format", choices=EXPORT_FORMATS, default="txt")
+    p.add_argument("--save", action="store_true", help="write it under data/exports/transcripts")
+    p.set_defaults(func=cmd_transcript)
+
+    p = sub.add_parser("search", help="search transcripts")
+    p.add_argument("query")
+    p.add_argument("--video", help="only this video (id or SHA-256 prefix)")
+    p.add_argument("--limit", type=int, default=50)
+    p.set_defaults(func=cmd_search)
 
     p = sub.add_parser("show", help="show details of one video")
     p.add_argument("video", help="video id (e.g. 3) or SHA-256 prefix (at least 6 characters)")
@@ -296,7 +611,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("reconcile", help="record vault files missing from the database")
     p.set_defaults(func=cmd_reconcile)
 
-    p = sub.add_parser("check", help="verify ffprobe, data directory and database")
+    p = sub.add_parser(
+        "check", help="verify ffprobe, ffmpeg capabilities, data directory, database and workers"
+    )
     p.set_defaults(func=cmd_check)
 
     p = sub.add_parser("ui", help="start the Streamlit dashboard and a worker")

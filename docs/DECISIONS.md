@@ -79,3 +79,179 @@ statistics off; no browser uploads for media (path-based import).
 **Decision:** `CLAUDE.md` holds rules for all phases; `docs/ROADMAP.md` holds phases and
 acceptance criteria; `docs/PROGRESS.md` tracks status. Rules in `CLAUDE.md` win on conflict.
 **Consequences:** Rules stay loaded for every session; the roadmap can evolve freely.
+
+## D12 — Job ownership and cooperative cancellation (2026-11-20)
+
+**Context:** Phase 1B jobs run FFmpeg for minutes. A stalled worker that wakes up after
+stale recovery must not overwrite the result of the worker that took over, and the user
+must be able to stop a job without corrupting state.
+**Decision:** Migration `0003` rebuilds `jobs` (SQLite cannot alter a CHECK constraint)
+with a `cancelled` status and `cancel_requested_at`. Every state change is a guarded
+`UPDATE ... WHERE status = 'running' AND worker_id = ?`; it returns False when the caller
+no longer owns the job. Stage and artifact writes check ownership in the same
+transaction. Cancelling a queued job is immediate; cancelling a running job sets a flag
+that the worker's heartbeat thread turns into a cancel event. FFmpeg is stopped with
+SIGTERM, then SIGKILL after 5 s, and cancellation is reported only after the process has
+exited. Stale recovery cancels (rather than requeues) jobs with a pending cancellation.
+**Consequences:** Stale workers cannot corrupt results; cancellation latency is about one
+heartbeat (2 s) plus FFmpeg shutdown. Superseded D7 in part: `succeed`, `fail` and
+`requeue` now only act on running jobs.
+
+## D13 — Processing stages and artifacts (2026-11-20)
+
+**Context:** Outputs must be traceable to their video and job, reusable when valid and
+never written over originals.
+**Decision:** `processing_stages` keeps the latest state of each (video, stage);
+`artifacts` keeps the current file of each (video, kind) with size, SHA-256, parameter
+hash, metadata and job id. Output paths are deterministic:
+`data/derived/<sha[:2]>/<sha>/<name>-<params_hash>.<ext>`. FFmpeg writes a unique hidden
+`*.partial` file next to the final path; the output is probed and validated, hashed and
+renamed into place atomically, then registered. A valid artifact with the same parameter
+hash is reused unless the run is forced. A failed stage does not stop the other stages.
+**Consequences:** No stage history beyond the latest run (job rows keep the history of
+runs). Changing stage parameters or `STAGE_VERSION` regenerates outputs at a new path and
+removes the superseded file.
+
+## D14 — Proxy, audio and thumbnail formats (2026-11-20)
+
+**Context:** Phase 1C needs speech audio; later phases need fast previews on an M1 Max.
+**Decision:** Audio: first audio stream, downmixed to 16 kHz mono PCM s16le WAV. Proxy:
+H.264 MP4, shorter side at most 720 px (never upscaled, even dimensions), constant frame
+rate equal to the source average capped at 30 fps, keyframe every 2 s, AAC 128 kb/s stereo
+when the source has audio, `+faststart`. VideoToolbox (`h264_videotoolbox`, 3 Mb/s) is used
+only after a test encode succeeds, otherwise libx264 (`veryfast`, CRF 26); a VideoToolbox
+failure during a real encode is retried once with libx264. FFmpeg's default auto-rotation
+applies display rotation. Thumbnail: one 640x360 JPEG (letterboxed), chosen by the
+`thumbnail` filter from 50 frames starting 10% into the proxy (or the original when no
+proxy exists).
+**Consequences:** HDR sources are converted to 8-bit SDR without tone mapping (the
+installed FFmpeg has no `zscale`), so their proxies look flat. Proxies are for preview and
+analysis, not final export.
+
+## D15 — Transcription engine: faster-whisper on the CPU (2026-11-21)
+
+**Context:** Phase 1C needs local speech-to-text with segment and word timestamps, language
+detection and selection, on an M1 Max with 32 GB RAM, without recurring cost.
+**Options considered** (package metadata checked on PyPI on 2026-11-21):
+- **faster-whisper 1.2.1** (MIT; CTranslate2 4.9.0). Wheels for macOS arm64 and Linux on Python
+  3.12. Dependencies: `ctranslate2`, `tokenizers`, `onnxruntime` (Silero voice-activity
+  detection), `av` (PyAV), `huggingface-hub`, `tqdm`; about 60 MB of wheels, no PyTorch. Word
+  timestamps, language detection, VAD, int8 CPU inference. CTranslate2 4.9.0 also ships an
+  **experimental** Apple Metal (`mps`) device; it was measured and is slower than CPU int8 for
+  `tiny` and `base` on the M1 Max (see D16), so it is not used.
+- **mlx-whisper 0.4.3** (MIT). Runs on the Apple GPU through MLX. Requires `torch`, `numba`,
+  `scipy`, `tiktoken` and `mlx`, i.e. a full PyTorch install, and Apple Silicon only (no Linux CI).
+- whisper.cpp bindings and OpenAI's `openai-whisper` (PyTorch, slow on CPU) were not pursued.
+**Decision:** faster-whisper is the only engine, added as a runtime dependency. It is imported
+only inside `adapters/faster_whisper.py` (lazily, when a job runs), behind the
+`SpeechTranscriber` protocol, so the rest of the app runs and explains the problem if it is
+missing, and another engine can be added later without touching services or storage. Device
+is always `cpu`; compute type defaults to `int8`. Audio is decoded by the adapter (stdlib
+`wave` + numpy, chunked) and passed to faster-whisper as a float32 array: faster-whisper
+1.2.1's own PyAV decoder calls `av.open(..., metadata_errors=...)`, which PyAV 19.0.2 rejects
+(`TypeError`, found by the opt-in real-model test). mlx-whisper was **not** benchmarked in this
+phase: the network on 2026-11-21 delivered roughly 10–700 KB/s, which made a PyTorch install
+plus a second set of weights impractical, and adding PyTorch for a comparison is exactly the
+"large framework without evidence" the roadmap warns against.
+**Consequences:** One engine, CPU only; GPU acceleration is not claimed anywhere. The `mps`
+device can be re-measured for larger models later; it is not exposed as a setting. A fair
+faster-whisper vs mlx-whisper comparison (same model size, same audio) is an open follow-up:
+run `scripts/benchmark_transcription.py` for faster-whisper, and mlx-whisper in a throwaway
+environment (`uv run --isolated --with mlx-whisper ...`) so the project lock is not changed.
+
+## D16 — Speech models, defaults and benchmark (2026-11-21)
+
+**Context:** Model choice trades speed against accuracy; downloads must be explicit and
+reproducible (roadmap 1C.2).
+**Decision:** A fixed catalog (`adapters/model_store.py`): `tiny`, `base`, `small`, `medium`,
+`large-v3-turbo`, `large-v3`, each pinned to a Hugging Face repository **revision** (commit
+hash) with the exact file list and sizes, and the SHA-256 of `model.bin` from the Hugging Face
+API. Multilingual models only (no `.en` variants), because content includes non-English speech.
+Default model `small`, compute type `int8`, beam size 5, VAD on, word timestamps on, CPU
+threads left to faster-whisper (`0`). All are settings (`IFTYEDITS_TRANSCRIPTION_*`).
+**Benchmark:** see the table under "Benchmark results" below, produced with
+`scripts/benchmark_transcription.py`. Only models that could be downloaded over the available
+network were measured.
+**Consequences:** The same model name always means the same weights. Changing a pinned
+revision changes the transcript parameter hash, so old transcripts are not silently reused.
+
+### Benchmark results
+
+Measured 2026-11-21 on the M1 Max (32 GB, macOS 26.2) with faster-whisper 1.2.1 /
+CTranslate2 4.9.0, beam 5, VAD and word timestamps on, each configuration in a fresh process
+(`scripts/benchmark_transcription.py --models tiny base --threads 0 4 8 --repeats 6`).
+Audio: 222.9 s of English speech synthesised with macOS `say` from the script's fixed text,
+which is also the WER reference. Synthetic speech is much cleaner than real podcasts, so
+these WER values are optimistic; speed is representative.
+
+| Model | Device / compute | Threads | Load (s) | Transcribe (s) | Speed (x real time) | Peak RAM | WER |
+|---|---|---|---|---|---|---|---|
+| tiny | CPU int8 | default (4) | 0.1 | 6.7 | 33.2 | 0.74 GB | 5.5% |
+| tiny | CPU int8 | 4 | 0.1 | 6.6 | 33.6 | 0.73 GB | 5.5% |
+| tiny | CPU int8 | 8 | 0.1 | 10.2 | 21.8 | 0.74 GB | 5.5% |
+| base | CPU int8 | default (4) | 0.2 | 11.0 | 20.3 | 0.83 GB | 4.5% |
+| base | CPU int8 | 4 | 0.2 | 10.8 | 20.6 | 0.82 GB | 4.5% |
+| base | CPU int8 | 8 | 0.2 | 21.2 | 10.5 | 0.85 GB | 4.5% |
+
+Apple Metal comparison (same audio, same process, one run each):
+
+| Model | CPU int8 | MPS float16 (experimental) |
+|---|---|---|
+| tiny | 6.4 s (35.0x) | 9.9 s (22.5x) |
+| base | 10.2 s (21.8x) | 25.5 s (8.7x) |
+
+Findings: 8 threads is slower than the default (CTranslate2 uses 4 intra-op threads by default;
+8 contends with the efficiency cores and other work), so `IFTYEDITS_TRANSCRIPTION_CPU_THREADS`
+stays `0`. MPS is slower than CPU int8 for these small models. Requesting `int8` on MPS is
+silently run as float16 by CTranslate2.
+
+**Not measured:** `small` (the default), `medium`, `large-v3-turbo` and `large-v3` could not be
+downloaded in reasonable time over the network available on 2026-11-21 (often 5–50 KB/s), and
+mlx-whisper was not installed (D15). `small` is the default because it is the usual
+speed/accuracy balance for Whisper models; confirm with
+`scripts/benchmark_transcription.py --models small` once it is downloaded, ideally with a real
+recording and a hand-checked reference (`--audio`, `--reference`). Memory figures in the model
+catalog for models other than `tiny` and `base` are estimates.
+
+## D17 — Transcript storage, reuse and search (2026-11-21)
+
+**Context:** Later phases (moment detection, captions) need structured, timestamped text;
+the UI needs search; re-running must not create duplicates.
+**Decision:** Migration `0004_transcripts` adds `transcripts`, `transcript_segments` and
+`transcript_words`, plus an FTS5 index `transcript_search` over segment text kept in sync by
+triggers (tokenizer `unicode61 remove_diacritics 2`). A transcript row stores provenance: the
+audio artifact's SHA-256, engine and version, model and pinned revision, device, compute type,
+requested and detected language with probability, parameters and their hash, counts and
+processing time. It is written once, with all segments and words, in one transaction after a
+job-ownership check; run state (progress, errors, cancellation) stays on the job. Identity is
+(video, parameter hash): the same parameters reuse the stored transcript (or replace it with
+`force`); other parameters add a version. Exactly one transcript per video is current
+(partial unique index); later phases read `TranscriptRepository.current()`. Transcript ids use
+`AUTOINCREMENT` because they appear in job results and exports. Engine output passes through
+`core/transcript.normalize_segments`: finite, non-negative, millisecond-rounded times, end not
+before start, nothing past the audio end (0.5 s tolerance clamped, beyond that dropped and
+counted), words inside their segment, text stripped. Overlapping segments are kept. Search
+quotes every user word as an FTS5 prefix term, so user input cannot inject FTS syntax.
+SRT, WebVTT, TXT and JSON exports are generated from the database on demand; `--save` writes
+under `data/exports/transcripts/` after `assert_safe_output_path`.
+**Consequences:** No partial transcripts after failures or cancellation, and an earlier
+transcript survives a failed re-run. Languages without spaces are only searchable by whole
+runs (no CJK segmentation). One language per transcript; no diarisation.
+
+## D18 — Explicit, verified model downloads (2026-11-21)
+
+**Context:** Roadmap 1C.2 requires showing the download size and disk space before
+downloading; CLAUDE.md requires model weights outside Git and clear errors for missing models.
+**Decision:** Transcription loads models with `local_files_only=True` and never downloads.
+Downloads happen only through a `download_model` job (Transcripts page) or
+`iftyedits models download`, using `urllib` against `https://huggingface.co/<repo>/resolve/<revision>/<file>`
+(any other URL is refused). The store checks free space (download size + 512 MB), streams into
+a hidden `.download-*` folder under `models/faster-whisper/` with byte progress and
+cancellation, verifies sizes and the weights' SHA-256, writes a manifest, and only then renames
+the folder into place. Abandoned staging folders older than an hour are removed when a worker
+starts. A models directory inside the originals vault is refused. `huggingface_hub` (a
+faster-whisper dependency) is not used for downloads because it offers no byte-level progress
+callback or cancellation.
+**Consequences:** Downloads are reproducible and auditable, but cannot resume; a cancelled or
+failed download starts again. Installed-model checks compare sizes (cheap); `models verify`
+re-hashes the weights.

@@ -138,6 +138,14 @@ The application should be useful end-to-end. A beautiful interface with nonfunct
 - Re-running a completed stage reuses valid cached output.
 - Integration tests verify source preservation.
 
+### Phase 1B plan changes (2026-11-20)
+- Contact sheets (1B.4) are deferred to Phase 3C (editor and preview), where a strip of
+  frames is useful for trimming. Phase 1B produces one representative thumbnail per video.
+- HDR sources are converted to SDR without tone mapping; the installed FFmpeg lacks
+  `zscale`. Revisit if HDR footage becomes common (see D14).
+- Automatic retries (1B.1) apply to jobs interrupted by a worker crash or shutdown. Failed
+  stages are retried by queuing the video again; valid outputs from earlier runs are reused.
+
 ---
 
 # Phase 1C — Transcription
@@ -173,6 +181,19 @@ The application should be useful end-to-end. A beautiful interface with nonfunct
 - SRT/VTT exports are valid.
 - Model failures and missing models are clearly explained.
 - Benchmark results are documented.
+
+### Phase 1C plan changes (2026-11-21)
+- faster-whisper is the only engine (D15). The MLX comparison (1C.2) was not run: mlx-whisper
+  needs PyTorch, and the available bandwidth on 2026-11-21 made a second framework and second
+  set of weights impractical. It stays a follow-up, run in a throwaway environment so the
+  project lock does not change.
+- The benchmark covers the models that could be downloaded during the phase; larger models are
+  listed in D16 as not measured. `scripts/benchmark_transcription.py` reproduces it.
+- Model sizes are shown from a pinned catalog (sizes and SHA-256 from the Hugging Face API);
+  downloads are explicit jobs that check free space and verify files (D18).
+- Run state (progress, errors, cancellation, retries) is tracked on the job; only finished
+  transcripts are stored (D17). A failed transcription is retried by starting it again.
+- Overlapping speech is stored as overlapping segments; there is no speaker separation.
 
 ---
 

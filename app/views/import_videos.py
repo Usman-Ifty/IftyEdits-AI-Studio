@@ -70,9 +70,12 @@ if scan:
             hide_index=True,
             width="stretch",
         )
+        prepare = st.checkbox(
+            "Prepare media after import (16 kHz audio, 720p proxy, thumbnail)", value=True
+        )
         if st.button(f"Queue {len(files)} file(s) for import", type="primary"):
             with closing(open_database(settings.db_path)) as conn:
-                ids = JobQueue(conn).enqueue_imports(files)
+                ids = JobQueue(conn).enqueue_imports(files, process_after=prepare)
             st.session_state.pop(SCAN_KEY, None)
             already = len(files) - len(ids)
             st.success(
@@ -94,6 +97,7 @@ def job_status() -> None:
     if not jobs:
         st.caption("No jobs yet.")
         return
+    st.caption("Cancel jobs and see processing errors on the Jobs page.")
     st.dataframe(
         [job_row(j) for j in jobs],
         hide_index=True,

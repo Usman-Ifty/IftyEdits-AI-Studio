@@ -35,6 +35,22 @@ class UnsupportedMediaError(IftyEditsError):
     """A file is readable but is not a supported video."""
 
 
+class MediaValidationError(IftyEditsError):
+    """A generated file does not match what the processing stage should have produced."""
+
+
+class ProcessingError(IftyEditsError):
+    """One or more media preparation stages failed. Details are on each stage record."""
+
+
+class JobCancelledError(IftyEditsError):
+    """Work stopped because the user cancelled the job. Any external process has exited."""
+
+
+class JobOwnershipError(IftyEditsError):
+    """A worker tried to update a job it no longer owns (for example after stale recovery)."""
+
+
 class ImportRecordError(IftyEditsError):
     """The original was stored in the vault but its database record could not be written.
 
@@ -44,3 +60,31 @@ class ImportRecordError(IftyEditsError):
     def __init__(self, message: str, sha256: str) -> None:
         super().__init__(message)
         self.sha256 = sha256
+
+
+class TranscriptionError(IftyEditsError):
+    """A video could not be transcribed. The message says why and what to do."""
+
+
+class NoAudioError(TranscriptionError):
+    """The video has no audio stream, so there is nothing to transcribe."""
+
+
+class TranscriptionEngineUnavailableError(TranscriptionError):
+    """The speech-recognition engine (faster-whisper) is not installed or cannot load."""
+
+
+class ModelNotInstalledError(TranscriptionError):
+    """The requested speech model has not been downloaded yet."""
+
+
+class UnknownModelError(TranscriptionError):
+    """The requested speech model is not in the supported catalog."""
+
+
+class TranscriptionTimeoutError(TranscriptionError):
+    """Transcription took longer than the configured limit."""
+
+
+class ModelDownloadError(IftyEditsError):
+    """A speech model could not be downloaded or failed verification."""
