@@ -88,3 +88,11 @@ class TranscriptionTimeoutError(TranscriptionError):
 
 class ModelDownloadError(IftyEditsError):
     """A speech model could not be downloaded or failed verification."""
+
+
+class ClipAnalysisError(IftyEditsError):
+    """Clip intelligence could not run for a video. The message says why and what to do."""
+
+
+class ClipNotFoundError(ClipAnalysisError):
+    """No clip candidate with the given id exists."""

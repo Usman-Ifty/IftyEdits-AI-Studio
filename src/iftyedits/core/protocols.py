@@ -6,6 +6,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Protocol
 
+from iftyedits.core.clip_models import SceneCut
 from iftyedits.core.models import (
     EngineTranscription,
     MediaInfo,
@@ -120,4 +121,20 @@ class SpeechModelStore(Protocol):
 
     def clean_staging(self) -> int:
         """Remove abandoned partial downloads. Returns how many were removed."""
+        ...
+
+
+class SceneDetector(Protocol):
+    """Finds scene changes in a (proxy) video without modifying it."""
+
+    def detect(
+        self,
+        video: Path,
+        *,
+        threshold: float,
+        duration_s: float | None = None,
+        progress: Callable[[float], None] | None = None,
+        cancel: CancelToken | None = None,
+    ) -> list[SceneCut]:
+        """Scene cuts with their scores. Raises ``ExternalToolError`` if decoding fails."""
         ...

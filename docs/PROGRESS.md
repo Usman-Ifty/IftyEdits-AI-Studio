@@ -8,9 +8,9 @@ Update after every completed milestone.
 | 1A Import foundation | IN PROGRESS (implementation complete, CI green; awaiting review and merge of PR #1) |
 | 1B Media preparation and jobs | IN PROGRESS (implementation complete and verified locally; committed locally on branch `feat/phase-1b-media`; awaiting CI and merge) |
 | 1C Transcription | IN PROGRESS (implementation complete, verified locally and by the owner on a real video; committed locally with 1B; benchmark covers tiny and base only; awaiting CI and merge) |
-| 2A Content signals | NOT STARTED |
-| 2B Candidate generation | NOT STARTED |
-| 2C Clip scoring | NOT STARTED |
+| 2A Content signals | IN PROGRESS (branch `feat/phase-2-clip-intelligence`) |
+| 2B Candidate generation | IN PROGRESS |
+| 2C Clip scoring | IN PROGRESS |
 | 3A Vertical reframing | NOT STARTED |
 | 3B Captions | NOT STARTED |
 | 3C Editor and preview | NOT STARTED |
@@ -460,3 +460,26 @@ not be downloaded on the owner's network at the time.
 After review: download `small` (`uv run iftyedits models download small`), run the benchmark
 and record it in D16, then commit 1B/1C and get CI green. Phase 2A (content signals) only
 after that.
+
+---
+
+## Phase 2 — Clip Intelligence (2A signals, 2B candidates, 2C scoring)
+
+**Status:** IN PROGRESS on branch `feat/phase-2-clip-intelligence` (created from
+`feat/phase-1b-media` at `c1e4e6d`, the local commit of Phases 1B and 1C).
+
+### Audit at the start of Phase 2 (2026-11-21)
+
+- Phases 1B and 1C were uncommitted; with the owner's approval they were committed locally
+  as `c1e4e6d` on `feat/phase-1b-media` (with the staged CLAUDE.md). Nothing was pushed.
+- Baseline before Phase 2: `uv sync --locked` OK, Ruff and format clean, mypy clean,
+  pytest 363 passed and 1 opt-in real-model test skipped.
+
+### Milestones
+
+- [x] 2A content signals: sentence rebuilding, transcript, audio and scene signals, with
+  unit and FFmpeg tests.
+- [ ] 2B candidate generation
+- [ ] 2C scoring and ranking
+- [ ] Persistence, job, worker, CLI and Clips page
+- [ ] Documentation and verification
