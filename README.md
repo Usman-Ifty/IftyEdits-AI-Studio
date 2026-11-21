@@ -11,7 +11,10 @@ decisions in [docs/DECISIONS.md](docs/DECISIONS.md). How to use the app:
 implemented on local branches and awaiting review; see [docs/PROGRESS.md](docs/PROGRESS.md).
 Videos are imported into a protected vault, prepared in a background worker (16 kHz audio,
 720p proxy, thumbnail) and transcribed locally with faster-whisper into searchable,
-timestamped transcripts that export to SRT, WebVTT, text and JSON.
+timestamped transcripts that export to SRT, WebVTT, text and JSON. Phase 2 (clip
+intelligence, implemented on `feat/phase-2-clip-intelligence`, awaiting review) analyses a
+transcript with loudness and scene changes, proposes sentence-aligned clips and ranks them
+with an explainable algorithmic score on the **Clips** page. Nothing is rendered yet.
 
 ## Requirements
 
@@ -57,6 +60,8 @@ uv run streamlit run app/Home.py
 | `iftyedits models [list\|download NAME\|verify NAME]` | List, download or verify speech models |
 | `iftyedits transcribe VIDEO... \| --all [--model M] [--language L] [--force]` | Queue transcription |
 | `iftyedits transcript VIDEO [--format txt\|srt\|vtt\|json] [--save]` | Print or save the current transcript |
+| `iftyedits analyze VIDEO... \| --all [--force]` | Queue clip analysis (suggested Shorts) |
+| `iftyedits clips list\|show\|favorite\|reject\|clear VIDEO [REF]` | Review ranked clip suggestions |
 | `iftyedits search QUERY [--video VIDEO] [--limit N]` | Search current transcripts |
 | `iftyedits jobs [--limit N] [--active]` | List jobs |
 | `iftyedits cancel JOB_ID...` | Cancel queued jobs or stop running ones |
@@ -124,7 +129,7 @@ src/iftyedits/
   core/          domain models, protocols and errors (no I/O)
   storage/       SQLite (db.py, migrations/), video repository, originals vault
   adapters/      ffprobe, ffmpeg, faster-whisper, speech model store
-  services/      ingest, media preparation, transcription, subtitle exports
+  services/      ingest, media preparation, transcription, subtitle exports, clip analysis
   pipeline/      job queue and worker
   ui/            display formatting for Streamlit
 app/             Streamlit dashboard (Home.py, views/)
@@ -165,3 +170,8 @@ Relative paths resolve against `IFTYEDITS_HOME`, or the current directory if uns
 | `IFTYEDITS_TRANSCRIPTION_VAD` | `true` | Skip silence with voice-activity detection |
 | `IFTYEDITS_TRANSCRIPTION_WORD_TIMESTAMPS` | `true` | Store word timings |
 | `IFTYEDITS_TRANSCRIPTION_TIMEOUT_S` | `21600` | Limit for one transcription job |
+| `IFTYEDITS_CLIP_MIN_S` / `_TARGET_S` / `_MAX_S` | `15` / `40` / `60` | Preferred clip length in seconds (min <= target <= max) |
+| `IFTYEDITS_CLIP_MAX_CANDIDATES` | `20` | Suggestions kept per video |
+| `IFTYEDITS_CLIP_MAX_OVERLAP` | `0.5` | Largest overlap allowed between two suggestions (0 to 1) |
+| `IFTYEDITS_CLIP_SCENE_THRESHOLD` | `0.3` | FFmpeg scene-change sensitivity |
+| `IFTYEDITS_CLIP_USE_AUDIO` / `_USE_SCENES` | `true` | Use loudness and scene changes as evidence |

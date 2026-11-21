@@ -225,6 +225,16 @@ The application should be useful end-to-end. A beautiful interface with nonfunct
 - Make timestamps inspectable.
 - Show confidence and signal source.
 
+### Phase 2A implementation status (2026-11-22)
+
+Implemented: transcript signals (question and answer, story, hook, insight, motivation,
+emotional and humorous wording, surprise, topic shifts, rapid exchange, pauses, speech
+density), audio loudness peaks and silence from the prepared WAV, and FFmpeg scene changes
+from the proxy (D20). Every signal records its source (transcript, audio or video), time
+span, strength and reliability. Wording cues are English only; other languages are marked
+"not assessed". **Deferred:** face detection (2A.3, OpenCV/YuNet) and speaker separation.
+The application never claims to have analysed faces or speakers (the details panel says so).
+
 ### Phase 2A acceptance criteria
 - Signals are persisted and reproducible.
 - Timeline data aligns with source timestamps.
@@ -266,6 +276,15 @@ These are suggestions, not hard-coded assumptions about every source.
 - Validate timestamps against the actual source duration.
 - Handle hallucinated quotes and inaccurate summaries.
 
+### Phase 2B implementation status (2026-11-22)
+
+Implemented: sentence-aligned candidates grown from signals, topic blocks and thought starts,
+with scene-snapped boundaries, duplicate merging and hook, context and payoff spans.
+Categories are listed in `core/scoring.py` (`CATEGORY_LABELS`). The user can favorite or
+reject a suggestion (Clips page and CLI). **Deferred:** optional language-model assistance
+(2B.3), in-app preview (needs the playback of Phase 3C) and a screen to adjust boundaries
+(the database already stores `adjusted_start_s` and `adjusted_end_s` for it).
+
 ### Phase 2B acceptance criteria
 - Candidate clips are generated from actual source timestamps.
 - Each candidate includes a transcript excerpt and explanation.
@@ -298,6 +317,13 @@ Requirements:
 - Allow user feedback to influence future ranking.
 - Keep the scoring algorithm deterministic and testable.
 - Add baseline fixtures to detect regressions.
+
+### Phase 2C implementation status (2026-11-22)
+
+Implemented: deterministic, versioned scoring (`SCORING_VERSION` 1) with 12 weighted
+components, penalties and an evidence-quality confidence; greedy overlap-aware ranking;
+feedback (favorite, reject, per-type bias) that changes the next ranking. Scores are
+recommendations, not predictions. Fixture-based regression tests cover scoring.
 
 ### Phase 2C acceptance criteria
 - Candidates have explainable component scores.

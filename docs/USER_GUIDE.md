@@ -146,6 +146,36 @@ segment; matching ignores capitals and accents and also matches word beginnings 
 `talks`). Choose **This video** or **All videos**. Results show the time stamp, video number and
 the matching text in bold. Only the current (★) transcript of each video is searched.
 
+### Clips
+
+Finds moments in a transcribed video that may work as Shorts. It needs the video's transcript
+(see Transcripts) and a running worker (`uv run iftyedits ui` starts one).
+
+1. Pick a **Video**. Videos without a transcript show a warning.
+2. Press **Find clips**. The panel shows the job's progress and a **Cancel analysis** button.
+   **Analyse again** recomputes even when nothing changed.
+3. When the job ends, **Suggestions** lists up to 20 ranked clips. Pressing **Update
+   suggestions** later re-runs the analysis; it is reused instantly if nothing changed.
+
+Use **Sort by** (rank, score, evidence quality, duration, position), **Moment type**,
+**Status** (hides rejected by default), **Minimum score** and the length limits to narrow the
+list. Pick a clip under **Inspect** to see:
+
+- the time span, moment type, score and how much evidence supports it;
+- why it was chosen, its strengths and weaknesses, and the transcript excerpt;
+- the **score breakdown**: each factor's value (0-100), its weight and the reason. A weight of
+  0 means it was not assessed (for example wording cues in a non-English transcript);
+- **Evidence signals**: transcript, audio and scene signals inside the clip, each with its
+  source, strength and reliability.
+
+**Favorite**, **Reject** and **Clear decision** are saved in the database. They survive
+restarts and re-analysis, and nudge the next ranking (favorites up, rejected down, and a small
+bias toward moment types you favor). Nothing is cut, rendered or uploaded on this page.
+
+The score is an algorithmic recommendation based on the transcript, loudness and scene
+changes. It does not predict views and does not check copyright, music rights or platform
+rules. Faces and speakers are not analysed.
+
 ### Jobs
 
 Active jobs (imports, media preparation, transcription and model downloads) with progress bars
@@ -167,6 +197,10 @@ Run any command as `uv run iftyedits <command>`. Use `--help` after a command fo
 | `models verify NAME` | Re-hash an installed model's weights |
 | `transcribe VIDEO... \| --all [--model M] [--language L] [--force]` | Queue transcription |
 | `transcript VIDEO [--format txt\|srt\|vtt\|json] [--save]` | Print the current transcript, or save it under `data/exports/transcripts/` |
+| `analyze VIDEO... \| --all [--force]` | Queue clip analysis of transcribed videos |
+| `clips list VIDEO [--sort S] [--type T] [--min-score N] [--status S]` | List ranked suggestions |
+| `clips show VIDEO REF` | Show one suggestion with its score breakdown |
+| `clips favorite\|reject\|clear VIDEO REF` | Save or remove your decision |
 | `search QUERY [--video VIDEO] [--limit N]` | Search current transcripts |
 | `jobs [--limit N] [--active]` | List jobs |
 | `cancel JOB_ID...` | Cancel queued jobs or stop running ones |
@@ -267,7 +301,11 @@ Data folders (never committed to Git):
 
 ## 8. Current limitations
 
-- No clip finding, captions, editing, Shorts export or uploading yet.
+- No captions, vertical reframing, editing, Shorts export or uploading yet. Clip finding
+  suggests spans only; it does not cut video.
+- Clip scoring uses English wording cues, transcript timings, loudness and scene changes.
+  It does not analyse faces, speakers or tone of voice, and suggestions cannot be previewed or
+  have their boundaries adjusted in the app yet.
 - Transcription runs on the CPU. On an M1 Max, `tiny` ran about 33x and `base` about 20x faster
   than real time; `small` is slower (not yet measured). See D16 in [DECISIONS.md](DECISIONS.md).
 - One language per transcript. Speech that switches languages is transcribed in the detected

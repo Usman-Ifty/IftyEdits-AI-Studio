@@ -95,6 +95,11 @@ Layout:
   engine (`FakeTranscriber`), an in-memory model store and a fake audio-preparation step. No
   test downloads a model or runs inference unless the opt-in `model` marker is enabled.
 
+- `tests/clip_fakes.py`, `tests/clip_db_fakes.py`: a scripted podcast transcript, generated
+  loudness WAVs, a ready-made analysis and database helpers for clip tests. Clip tests need no
+  model or network; real FFmpeg scene detection is covered in
+  `tests/integration/test_clip_signals_ffmpeg.py`.
+
 Markers (declared in `pyproject.toml`; `--strict-markers` rejects unknown ones):
 
 - `ffmpeg`: needs the ffmpeg/ffprobe binaries.
@@ -170,6 +175,18 @@ speech:
 3. Search for a word you heard.
 4. `uv run iftyedits show VIDEO --verify` prints `integrity   OK` (the vault copy is unchanged),
    and `shasum -a 256` of your source file equals the SHA-256 it prints.
+
+## Verify clip analysis manually
+
+With an imported video that has a transcript:
+
+1. `uv run iftyedits analyze VIDEO`, then `uv run iftyedits worker --once`.
+2. `uv run iftyedits clips list VIDEO` prints ranked suggestions; `clips show VIDEO 1` prints
+   the breakdown.
+3. In the dashboard open **Clips**, sort and filter, inspect a clip, press **Favorite**, then
+   **Update suggestions** and check the scores change.
+4. To try it without touching real data, set `IFTYEDITS_DATA_DIR`, `IFTYEDITS_HOME` and
+   `IFTYEDITS_MODELS_DIR` to a scratch folder first.
 
 ## Continuous integration
 

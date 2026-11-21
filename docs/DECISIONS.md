@@ -255,3 +255,54 @@ callback or cancellation.
 **Consequences:** Downloads are reproducible and auditable, but cannot resume; a cancelled or
 failed download starts again. Installed-model checks compare sizes (cheap); `models verify`
 re-hashes the weights.
+
+
+---
+
+## D19 — Clip intelligence is deterministic, local and explainable (2026-11-22)
+
+**Context:** Phase 2 must rank suggested Shorts without a paid API, with reasons the user can
+check, and without claiming anything it did not analyse.
+**Decision:** Signals, candidate generation and scoring are plain deterministic algorithms in
+`core/` (no model, no network, no randomness). `numpy` is a direct dependency for the loudness
+analysis. A score is a weighted sum of 12 named components minus penalties; the stored record
+keeps every component value, weight and explanation, plus `SCORING_VERSION` and the
+generation version, so a result can be recomputed. Confidence measures evidence quality (word
+timings, transcript reliability, language support, audio and scene data present), not the
+chance of success. Wording cues exist for English only; other languages skip those components
+(weight 0, "Not assessed"). Faces, speakers and emotions from tone are not analysed, and the
+UI says so. Results are recommendations; they are not a prediction of views and not a
+copyright or policy check.
+**Consequences:** Results are reproducible and testable, and work offline. Quality is bounded
+by simple cues; an optional language-model provider (roadmap 2B.3) and OpenCV face detection
+(2A.3) remain future, opt-in work.
+
+## D20 — Scene changes from FFmpeg, not PySceneDetect (2026-11-22)
+
+**Context:** Roadmap 2A.1 allows PySceneDetect "or a justified alternative".
+**Decision:** Scene changes come from FFmpeg's `select='gt(scene,T)'` filter run on the 720p
+proxy through the existing transcoder adapter (threshold `IFTYEDITS_CLIP_SCENE_THRESHOLD`,
+default 0.3). Work files go under `data/derived/.clip_analysis_work/` after
+`assert_safe_output_path()`.
+**Consequences:** No new dependency and one decode of the small proxy. Cut detection is
+coarser than PySceneDetect's adaptive detector. Scenes only snap clip boundaries and add
+evidence, so the weaker detector is acceptable. A missing proxy or FFmpeg failure is
+recorded in the analysis `sources` and the analysis continues without scenes.
+
+## D21 — Clip storage: replaceable analyses, durable decisions (2026-11-22)
+
+**Context:** Re-analysis must not duplicate results or lose the user's choices, and a failed
+run must not leave partial results.
+**Decision:** Migration `0005_clips.sql` stores analyses, signals and candidates.
+`UNIQUE(video_id, params_hash)` makes a retry replace the earlier row; a partial unique index
+keeps one `is_current` analysis per video. All rows of an analysis are written in one
+transaction after `assert_job_owned`, so a failed or cancelled job writes nothing. Favorite,
+reject and adjusted boundaries are stored apart, keyed by `(video_id, candidate_key)` with a
+snapshot of the span, where the key is a hash of the video SHA-256 and the boundaries; they
+survive re-analysis. The feedback fingerprint is part of the parameters hash, so a new
+decision makes the next analysis re-rank instead of reusing the old one. Reuse is checked
+before the expensive passes. An analysis that ran without a requested source (for example, a
+damaged audio file) is marked degraded and is not reused.
+**Consequences:** Re-running is cheap and idempotent. Changing a transcript, a setting or
+feedback produces a new analysis automatically. Decisions about a boundary that later moves
+by a different key no longer attach to the new candidate.

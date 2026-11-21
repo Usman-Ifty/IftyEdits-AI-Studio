@@ -8,9 +8,9 @@ Update after every completed milestone.
 | 1A Import foundation | IN PROGRESS (implementation complete, CI green; awaiting review and merge of PR #1) |
 | 1B Media preparation and jobs | IN PROGRESS (implementation complete and verified locally; committed locally on branch `feat/phase-1b-media`; awaiting CI and merge) |
 | 1C Transcription | IN PROGRESS (implementation complete, verified locally and by the owner on a real video; committed locally with 1B; benchmark covers tiny and base only; awaiting CI and merge) |
-| 2A Content signals | IN PROGRESS (branch `feat/phase-2-clip-intelligence`) |
-| 2B Candidate generation | IN PROGRESS |
-| 2C Clip scoring | IN PROGRESS |
+| 2A Content signals | IMPLEMENTED and verified locally (branch `feat/phase-2-clip-intelligence`); face detection deferred; awaiting owner review |
+| 2B Candidate generation | IMPLEMENTED and verified locally; LLM assistance, preview and boundary editing deferred |
+| 2C Clip scoring | IMPLEMENTED and verified locally; awaiting owner review |
 | 3A Vertical reframing | NOT STARTED |
 | 3B Captions | NOT STARTED |
 | 3C Editor and preview | NOT STARTED |
@@ -465,7 +465,7 @@ after that.
 
 ## Phase 2 — Clip Intelligence (2A signals, 2B candidates, 2C scoring)
 
-**Status:** IN PROGRESS on branch `feat/phase-2-clip-intelligence` (created from
+**Status:** IMPLEMENTED and verified locally; awaiting owner review (nothing pushed). Branch `feat/phase-2-clip-intelligence` (created from
 `feat/phase-1b-media` at `c1e4e6d`, the local commit of Phases 1B and 1C).
 
 ### Audit at the start of Phase 2 (2026-11-21)
@@ -481,6 +481,41 @@ after that.
   unit and FFmpeg tests.
 - [x] 2B candidate generation: anchor, topic-block and thought-start proposals with
   sentence-aligned, scene-snapped boundaries and duplicate merging.
-- [x] 2C scoring and ranking (core engine `core/scoring.py`; persistence, job and UI pending)
-- [ ] Persistence, job, worker, CLI and Clips page
-- [ ] Documentation and verification
+- [x] 2C scoring and ranking (`core/scoring.py`)
+- [x] Persistence (migration 0005, `storage/clips.py`) and service (`services/clip_analysis.py`)
+- [x] Job kind `analyze_clips`, worker execution, progress, cancellation, idempotent retry
+- [x] CLI (`analyze`, `clips ...`) and the Clips page, plus Library and Overview columns
+- [x] Documentation (ROADMAP, DECISIONS D19 to D21, USER_GUIDE, TESTING, README)
+
+### Local commits on `feat/phase-2-clip-intelligence` (none pushed)
+
+`2fa35a7` 2A signals, `dd55d83` and `dd99d7e` 2B candidates, `b92c8d9` 2C scoring,
+`2429cc9` persistence and service, `86ad555` job and worker, `52faf48` Clips page, CLI and
+display helpers, then the documentation commit that follows them.
+
+### Verification (2026-11-22)
+
+- `uv sync --locked`, `ruff check`, `ruff format --check` and `mypy` (93 source files) clean.
+- `IFTYEDITS_REQUIRE_FFMPEG=1 uv run pytest`: 483 passed, 1 skipped (the opt-in real-model
+  test, `IFTYEDITS_RUN_MODEL_TESTS`). Clip-specific tests: signals, candidates, scoring,
+  storage, service, worker, CLI, UI helpers and page (AppTest), plus FFmpeg scene tests.
+- Dashboard started headless on 127.0.0.1 (health `ok`).
+- Real-media smoke test in a scratch folder (never `data/`): a generated 90 s H.264 video was
+  imported and prepared by the real worker and FFmpeg (audio, proxy, thumbnail), then
+  analysed through the CLI and worker. It produced 3 suggestions from 16 signals. After
+  favoriting the top one, re-analysis re-ranked it (best score 72 to 81). **Limitation:** the
+  transcript in that run was a scripted fixture, not a real Whisper transcript, because no
+  speech model is installed; transcription itself was verified in Phase 1C.
+
+### Limitations and deferred work
+
+- Not implemented: face detection (2A.3), speaker separation, optional language-model
+  assistance (2B.3), preview playback and a boundary-adjust screen (database fields exist).
+- Wording cues are English only. Scores are algorithmic recommendations, not predictions.
+- Suggestion quality on real long-form speech is not yet benchmarked by the owner.
+
+### Next recommended task
+
+Owner review of the Phase 2 diff and a try on a real transcript (`uv run iftyedits ui`,
+Clips page). Then Phase 3A (vertical reframing), which can use `ClipCandidate.effective_start_s`
+and `effective_end_s` as its input.
