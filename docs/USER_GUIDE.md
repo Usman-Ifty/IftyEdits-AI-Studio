@@ -183,6 +183,29 @@ The score is an algorithmic recommendation based on the transcript, loudness and
 changes. It does not predict views and does not check copyright, music rights or platform
 rules. Faces and speakers are not analysed.
 
+### Short editor
+
+Turns a suggested clip into a vertical MP4. Open it from **Clips** with **Edit as a Short**, or
+pick a video and clip on the page. Nothing here changes your original, the transcript or the
+suggestion; edits are saved as settings for that one Short.
+
+- **Trim**: start and end in seconds (3 to 180 s, inside the video). **Reset to the AI
+  suggestion** restores the original range.
+- **Framing**: a 0 to 100 crop position (50 = centre). The crop keeps the full height and is
+  never stretched.
+- **Captions**: on or off, presets (Classic, Boxed, Highlight, Minimal), size, colours,
+  outline, background, alignment and position. The text box lists each caption line so you can
+  correct wording; corrections are stored with the Short, not in the transcript. Highlight
+  only works when the transcript has word timing.
+- **Look and sound**: fade in/out, brightness, contrast, saturation; keep or drop audio,
+  volume, sound fades, and optional loudness evening (about -16 LUFS).
+- **Output**: 1080x1920 (recommended), 720p or 540p, and quality. Smaller sources are scaled
+  up; no detail is added.
+- **Render preview video** makes a small 540x960 clip with the same crop, captions and sound.
+  **Export Short** makes the finished file in `data/exports/shorts/` and never overwrites an
+  earlier one. Both run in the worker; a second click while one runs is refused.
+  **Reset everything** returns every setting to its default.
+
 ### Jobs
 
 Active jobs (imports, media preparation, transcription and model downloads) with progress bars
@@ -308,11 +331,11 @@ Data folders (never committed to Git):
 
 ## 8. Current limitations
 
-- No captions, vertical reframing, editing, Shorts export or uploading yet. Clip finding
-  suggests spans only; it does not cut video.
+- Shorts are exported locally; there is no uploading, metadata or batch export yet. HDR video
+  is not tone-mapped. Reframing is a fixed (adjustable) crop, with no face or speaker tracking.
 - Clip scoring uses English wording cues (including boilerplate detection), transcript timings, loudness and scene changes.
-  It does not analyse faces, speakers or tone of voice, and suggestions cannot be previewed or
-  have their boundaries adjusted in the app yet.
+  It does not analyse faces, speakers or tone of voice, and suggestions can be previewed and
+  trimmed in the Short editor.
 - Transcription runs on the CPU. On an M1 Max, `tiny` ran about 33x and `base` about 20x faster
   than real time; `small` is slower (not yet measured). See D16 in [DECISIONS.md](DECISIONS.md).
 - One language per transcript. Speech that switches languages is transcribed in the detected
@@ -322,7 +345,6 @@ Data folders (never committed to Git):
 - Cancelling a transcription takes effect after the current segment (usually a few seconds).
 - Downloads cannot be paused; a cancelled or failed download starts again from the beginning.
 - Duplicates are detected only for byte-identical files.
-- No in-app video playback yet.
 - The worker runs one job at a time.
 - Videos cannot be deleted from the library through the app.
 - The dashboard is local-only (`127.0.0.1`) and has no login.

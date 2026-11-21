@@ -356,3 +356,40 @@ existing analyses are not reused and a new run replaces them.
 drop. Limits: English only; heuristic text cues, no tone-of-voice analysis; CTA wording outside
 the lexicon is missed, so a partly recognised outro can still appear low in the list; a mid-video
 host handover is not boilerplate and may still rank.
+
+## D24 — Short editing: stored edit config, Pillow caption overlay, hard-linked exports (2026-11-22)
+
+**Context:** Phase 3 must turn a Phase 2 suggestion into a finished vertical MP4 without ever
+changing the suggestion, the transcript or the original, and the installed FFmpeg has no
+`subtitles`, `ass` or `drawtext` filter.
+**Decision:**
+- *Edit config, not edited clips.* A `short_projects` row (migration `0006`) is keyed by
+  `(video_id, candidate_key)` and holds one JSON `ShortConfig` (trim, crop, captions, look,
+  audio, output). The AI start/end stay in the candidate; the config stores only the user's
+  values, so "Reset to the AI suggestion" is exact and switching clips can never leak settings.
+  Caption text edits live in the config as per-cue overrides; the transcript is read-only.
+- *Crop.* Full source height, width = height x 9/16 rounded down to an even integer (1280x720
+  keeps a 404x718 window; 1920x1080 keeps 606x1078, then scales to 1080x1920), x from a 0-100
+  slider clamped to the frame, y centred. Already-9:16 sources are not cropped; narrower
+  portrait sources keep full width. Scaling is uniform so nothing is stretched. Preview and
+  export call the same function. No face detection.
+- *Captions.* Drawn with Pillow into transparent RGBA PNGs, listed in a concat-demuxer input
+  and composited with `overlay`. Timing is word, segment or estimated and labelled as such;
+  active-word highlight only runs with real word timing. Pillow is the one new dependency.
+- *Render.* H.264 (`h264_videotoolbox` when `ffmpeg -encoders` lists it and a probe succeeds,
+  else `libx264`; failure at runtime retries with libx264) plus AAC 48 kHz, yuv420p, 30 fps
+  (60 for 60 fps sources). Optional `loudnorm` (single pass, -16 LUFS); volume above 100%
+  adds `alimiter`. Missing audio is not an error. HDR is not tone-mapped.
+- *Output.* Work in `derived/shorts/work/render_<id>` (removed after), encode to
+  `exports/shorts/.partial/render_<id>.partial`, verify with ffprobe (streams, size,
+  duration within tolerance) and a full `-xerror` decode, then hard-link to
+  `exports/shorts/<slug>_v<id>_<start>-<end>_<hash8>[-N].mp4` with `claim_unique_path`, so an
+  existing file is never replaced. Previews go to `derived/shorts/previews/`.
+- *Jobs.* `RENDER_SHORT` reuses the queue and worker. A unique partial index allows one active
+  render per config hash; a repeat click returns the running render. Progress comes from
+  FFmpeg `-progress`. On worker start, renders whose job vanished or died (60 s grace) are
+  closed as failed; `sync_renders` closes renders whose job was cancelled or failed.
+**Consequences:** Edits are cheap to store and reproduce (config hash covers video SHA and
+settings). Limits: single-pass loudnorm is approximate; HDR looks flat; the preview is a
+540x960 render of the same graph, not a live player; one worker runs one render at a time;
+no intelligent reframing, transitions or multi-clip timeline (future enhancements).

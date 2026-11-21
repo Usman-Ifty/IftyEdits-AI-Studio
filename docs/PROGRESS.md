@@ -11,10 +11,10 @@ Update after every completed milestone.
 | 2A Content signals | COMPLETE locally (branch `feat/phase-2-clip-intelligence`); face detection deferred |
 | 2B Candidate generation | COMPLETE locally; LLM assistance, preview and boundary editing deferred |
 | 2C Clip scoring | COMPLETE locally |
-| 3A Vertical reframing | NOT STARTED |
-| 3B Captions | NOT STARTED |
-| 3C Editor and preview | NOT STARTED |
-| 5 Export and batch | NOT STARTED |
+| 3A Vertical reframing | COMPLETE locally (branch `feat/phase-2-clip-intelligence`) |
+| 3B Captions | COMPLETE locally |
+| 3C Editor and preview | COMPLETE locally |
+| 5 Export and batch | PARTIAL: single Short export done in Phase 3; batch and metadata remain |
 | 4 SEO metadata | NOT STARTED |
 | 6 Safety review | NOT STARTED |
 | 7 YouTube integration | NOT STARTED |
@@ -579,3 +579,38 @@ intro sentence (60.3, a mid-video handover, still rank 5); the "disgusting" fals
 is gone; the 10:26-11:05 Q&A stays 63.0 and the "Oh my god" clip 60.8. Remaining limits are in D23.
 
 Next recommended task: owner review of the re-ranked clips, then Phase 3A (not started).
+
+---
+
+## Phase 3 — Short editing, captions, preview and export (2026-11-22)
+
+### Completed tasks
+- Edit config model, validation and crop geometry (`core/shorts.py`); caption cue building with
+  clip-relative timing and honest timing kinds (`core/captions.py`).
+- Pillow caption renderer (`adapters/caption_render.py`); FFmpeg render, verification and unique
+  output naming (`adapters/short_render.py`); `short_projects` and `short_renders` tables
+  (migration `0006`, `storage/shorts.py`); `ShortService`; `RENDER_SHORT` job with progress,
+  duplicate prevention, cancel and stale-render recovery.
+- Streamlit **Short editor** page (Trim, Framing, Captions, Look and sound, Output), live
+  still preview, preview video, export, reset; "Edit as a Short" button on Clips.
+
+### Commands and results
+- `uv run ruff check .`: all checks passed. `uv run ruff format --check .`: 115 files formatted.
+  `uv run mypy`: no issues in 107 source files.
+- `IFTYEDITS_REQUIRE_FFMPEG=1 uv run pytest`: 640 passed, 1 skipped (opt-in real-model test).
+- Real GTA 6 video, via the running app in a browser: clip 1 (Q&A, 10:26.3-11:05.0) exported to
+  `data/exports/shorts/gta-6-gameplay-details-we-found_v1_10m26s-11m05s_65ce8991.mp4`; clip 3
+  (13:06.4-13:47.1, Highlight captions, 0.8 s fade-in, loudness on) to
+  `..._v1_13m06s-13m47s_6ea5b641.mp4`. Both: h264 yuv420p 1080x1920 30 fps, AAC 48 kHz stereo,
+  duration equal to the clip (38.7 s, 40.7 s), clean full decode; clip 3 measured -16.2 LUFS.
+  A second Export click while running was refused ("The same request is already running").
+
+### Known limitations
+- Streamlit resets the active tab after a rerun that rebuilds the page.
+- Single-pass loudnorm; HDR sources are not tone-mapped; word timing is only as good as the
+  transcript (the `tiny` model is rough).
+- Preview is a rendered 540x960 clip plus a live still, not a scrubbing player.
+- No CLI command for Short export yet.
+
+### Next recommended task
+Phase 4 metadata (titles, descriptions, tags) or batch export.

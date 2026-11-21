@@ -189,6 +189,15 @@ With an imported video that has a transcript:
 4. To try it without touching real data, set `IFTYEDITS_DATA_DIR`, `IFTYEDITS_HOME` and
    `IFTYEDITS_MODELS_DIR` to a scratch folder first.
 
+## Verify Short editing manually
+
+1. `uv run iftyedits ui`, open **Clips**, press **Edit as a Short** on a suggestion.
+2. Adjust trim, crop, captions and sound; **Render preview video**, then **Export Short**.
+3. Check the file under `data/exports/shorts/` with `ffprobe` and
+   `ffmpeg -v error -xerror -i FILE -f null -`.
+4. Unit tests: `tests/unit/test_shorts_core.py`, `test_shorts_storage.py`,
+   `test_ui_editor_page.py`; FFmpeg tests: `tests/integration/test_shorts_ffmpeg.py`.
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on pushes to `main` and on every pull request:

@@ -76,6 +76,15 @@ uv run streamlit run app/Home.py
 `-r` / `--recursive` includes subfolders. Every entry that is not imported (symbolic link,
 hidden file, other extension, subfolder without `-r`) is listed with its reason.
 
+## Short editor
+
+**Clips → Edit as a Short** opens an editor to trim a suggestion, frame it for 9:16, edit
+captions, adjust look and sound, render a preview and export an H.264/AAC MP4 (1080x1920,
+VideoToolbox when available, libx264 otherwise) to `data/exports/shorts/`. Captions are drawn
+with Pillow because the installed FFmpeg has no text filters. Planned, not built: face-aware
+reframing, transitions, multi-clip timelines, a CLI export command. See D24 in
+[docs/DECISIONS.md](docs/DECISIONS.md).
+
 ## How import works
 
 1. The path is resolved and checked: a regular file with an allowed extension, outside `data/`.

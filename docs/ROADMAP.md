@@ -334,6 +334,9 @@ recommendations, not predictions. Fixture-based regression tests cover scoring.
 
 ---
 
+> **Status (2026-11-22):** Phases 3A-3C were delivered together as one slice; see D24 and
+> PROGRESS.md. Not built: face-aware reframing, transitions, contact sheets.
+
 # Phase 3A — Vertical Reframing
 
 **Goal:** Convert landscape source clips into polished 9:16 compositions.
