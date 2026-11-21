@@ -8,9 +8,9 @@ Update after every completed milestone.
 | 1A Import foundation | IN PROGRESS (implementation complete, CI green; awaiting review and merge of PR #1) |
 | 1B Media preparation and jobs | IN PROGRESS (implementation complete and verified locally; committed locally on branch `feat/phase-1b-media`; awaiting CI and merge) |
 | 1C Transcription | IN PROGRESS (implementation complete, verified locally and by the owner on a real video; committed locally with 1B; benchmark covers tiny and base only; awaiting CI and merge) |
-| 2A Content signals | IMPLEMENTED and verified locally (branch `feat/phase-2-clip-intelligence`); face detection deferred; awaiting owner review |
-| 2B Candidate generation | IMPLEMENTED and verified locally; LLM assistance, preview and boundary editing deferred |
-| 2C Clip scoring | IMPLEMENTED and verified locally; awaiting owner review |
+| 2A Content signals | COMPLETE locally (branch `feat/phase-2-clip-intelligence`); face detection deferred |
+| 2B Candidate generation | COMPLETE locally; LLM assistance, preview and boundary editing deferred |
+| 2C Clip scoring | COMPLETE locally |
 | 3A Vertical reframing | NOT STARTED |
 | 3B Captions | NOT STARTED |
 | 3C Editor and preview | NOT STARTED |
@@ -465,7 +465,7 @@ after that.
 
 ## Phase 2 — Clip Intelligence (2A signals, 2B candidates, 2C scoring)
 
-**Status:** IMPLEMENTED and verified locally; awaiting owner review (nothing pushed). Branch `feat/phase-2-clip-intelligence` (created from
+**Status:** COMPLETE locally against the Phase 2 definition of done; owner review, push and merge still pending (nothing pushed). Deferred items are listed below. Branch `feat/phase-2-clip-intelligence` (created from
 `feat/phase-1b-media` at `c1e4e6d`, the local commit of Phases 1B and 1C).
 
 ### Audit at the start of Phase 2 (2026-11-21)
