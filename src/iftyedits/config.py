@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
@@ -45,6 +45,7 @@ class Settings(BaseSettings):
         env_file=None,
         extra="ignore",
         frozen=True,
+        populate_by_name=True,
     )
 
     data_dir: Path = Path("data")
@@ -76,6 +77,28 @@ class Settings(BaseSettings):
     clip_scene_threshold: float = Field(default=0.3, ge=0.05, le=0.95)
     clip_use_audio: bool = True
     clip_use_scenes: bool = True
+    llm_base_url: str = "http://127.0.0.1:11434/v1"
+    llm_model: str = ""
+    llm_api_key: SecretStr = SecretStr("")
+    llm_timeout_s: float = Field(default=180.0, gt=0, le=3600)
+    llm_max_transcript_chars: int = Field(default=12000, ge=500, le=200000)
+    # Phase 6.10: Claude (Anthropic Messages API) and provider choice. The key is read from the
+    # environment only (ANTHROPIC_API_KEY) and is never stored or shown.
+    ai_provider: Literal["claude", "ollama", "hybrid"] = "ollama"
+    anthropic_api_key: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias=AliasChoices("ANTHROPIC_API_KEY", "IFTYEDITS_ANTHROPIC_API_KEY"),
+    )
+    anthropic_base_url: str = "https://api.anthropic.com"
+    claude_model: str = "claude-sonnet-5-5"
+    claude_timeout_s: float = Field(default=120.0, gt=0, le=3600)
+    ai_max_retries: int = Field(default=2, ge=0, le=5)
+    ai_max_output_tokens: int = Field(default=2048, ge=256, le=32000)
+    ai_monthly_budget_usd: float = Field(default=0.0, ge=0)
+    ai_monthly_token_limit: int = Field(default=0, ge=0)
+    ai_budget_hard: bool = False
+    claude_price_input_per_mtok: float | None = Field(default=None, ge=0)
+    claude_price_output_per_mtok: float | None = Field(default=None, ge=0)
     video_extensions: Annotated[tuple[str, ...], NoDecode] = DEFAULT_VIDEO_EXTENSIONS
 
     @field_validator("log_level", mode="before")
@@ -162,6 +185,10 @@ class Settings(BaseSettings):
                 for name in cls.model_fields
                 if f"{prefix}{name}".upper() in environ
             }
+            for name in ("ANTHROPIC_API_KEY", "IFTYEDITS_ANTHROPIC_API_KEY"):
+                if name in environ:
+                    values["anthropic_api_key"] = environ[name]
+                    break
             loaded = cls.model_validate(values)
         return loaded.model_copy(
             update={
