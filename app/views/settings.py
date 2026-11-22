@@ -32,7 +32,7 @@ from iftyedits.pipeline.jobs import JobQueue
 from iftyedits.services.preferences import Preferences
 from iftyedits.storage.ai import AiRepository
 from iftyedits.storage.db import open_database, schema_version
-from iftyedits.ui import theme
+from iftyedits.ui import theme, youtube_panel
 from iftyedits.ui.formatting import human_size
 
 settings = Settings.from_env()
@@ -241,8 +241,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-tab_storage, tab_processing, tab_ai, tab_diag = st.tabs(
-    ["Storage", "Processing", "AI writing and review", "Diagnostics"]
+tab_storage, tab_processing, tab_ai, tab_youtube, tab_diag = st.tabs(
+    ["Storage", "Processing", "AI writing and review", "YouTube", "Diagnostics"]
 )
 
 with tab_storage:
@@ -306,6 +306,14 @@ with tab_processing:
 
 with tab_ai, closing(open_database(settings.db_path)) as conn:
     _ai_panel(conn)
+
+with tab_youtube:
+    st.write(
+        "Optional. Connect your YouTube account to upload a finished Short as a private or "
+        "unlisted video after you approve the exact details. Nothing is ever published or "
+        "scheduled automatically."
+    )
+    youtube_panel.connection_card(settings)
 
 with tab_diag:
     with closing(open_database(settings.db_path)) as conn:

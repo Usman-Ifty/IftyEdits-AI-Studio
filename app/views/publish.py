@@ -28,7 +28,7 @@ from iftyedits.services.upload_package import (
 from iftyedits.storage.db import open_database
 from iftyedits.storage.shorts import ShortRepository
 from iftyedits.storage.videos import VideoRepository
-from iftyedits.ui import chrome, theme
+from iftyedits.ui import chrome, theme, youtube_panel
 from iftyedits.ui.formatting import utc_short
 from iftyedits.ui.shorts import clock
 
@@ -38,8 +38,9 @@ PROJECT_KEY = "publish-project"
 chrome.heading(
     "Upload package",
     "Prepare the title, description, tags, thumbnail and checks for one finished Short. "
-    "Nothing is uploaded, scheduled or published from here: you copy the package into "
-    "YouTube yourself.",
+    "You can copy the package into YouTube yourself, or (optionally) upload it as a private or "
+    "unlisted draft from the YouTube tab after your explicit approval. The studio never "
+    "publishes or schedules.",
 )
 
 
@@ -125,7 +126,9 @@ with closing(open_database(settings.db_path)) as conn:
             "check everything yourself. Transcribe the video in My Videos for better results."
         )
 
-    tabs = st.tabs(["Metadata", "Thumbnail", "Safety review", "Rights", "Checklist", "Package"])
+    tabs = st.tabs(
+        ["Metadata", "Thumbnail", "Safety review", "Rights", "Checklist", "Package", "YouTube"]
+    )
 
     # ------------------------------------------------------------------ metadata
     with tabs[0]:
@@ -721,3 +724,7 @@ with closing(open_database(settings.db_path)) as conn:
         )
         with st.expander("Preview"):
             st.json(package, expanded=False)
+
+    # ------------------------------------------------------------------ youtube (optional)
+    with tabs[6]:
+        youtube_panel.render(settings, pid)

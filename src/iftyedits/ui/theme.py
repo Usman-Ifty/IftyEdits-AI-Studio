@@ -103,6 +103,15 @@ code, pre { overflow-wrap: anywhere; white-space: pre-wrap !important; }
   .ie-hero { padding: 18px; }
   .ie-hero h1 { font-size: 1.5rem; }
 }
+@keyframes ie-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.ie-hero, .ie-card, .ie-empty { animation: ie-rise .28s ease-out both; }
+.ie-pill { transition: background-color .2s ease, border-color .2s ease; }
+@media (prefers-reduced-motion: reduce) {
+  .ie-hero, .ie-card, .ie-empty, .ie-pill { animation: none; transition: none; }
+}
 </style>
 """
 
