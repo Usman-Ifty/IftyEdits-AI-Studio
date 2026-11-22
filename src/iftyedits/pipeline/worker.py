@@ -50,6 +50,7 @@ from iftyedits.pipeline.jobs import (
     PRODUCE_VIDEO,
     RENDER_SHORT,
     TRANSCRIBE_VIDEO,
+    UPLOAD_YOUTUBE,
     JobQueue,
 )
 from iftyedits.services.clip_analysis import ClipAnalysisService
@@ -335,6 +336,8 @@ class Worker:
             return self._fetch_url(job, progress)
         if job.kind == PRODUCE_VIDEO:
             return self._produce(job, progress)
+        if job.kind == UPLOAD_YOUTUBE:
+            return self._upload_youtube(job, progress)
         raise IftyEditsError(f"Unknown job kind: {job.kind}")
 
     def _import(self, job: Job, progress: _Progress) -> tuple[dict[str, Any], str]:
@@ -562,6 +565,27 @@ class Worker:
 
         report = self.shorts().run_render(render_id, progress=on_progress, cancel=progress.cancel)
         return report.as_result(), report.summary()
+
+    def _upload_youtube(self, job: Job, progress: _Progress) -> tuple[dict[str, Any], str]:
+        upload_id = job.payload.get("upload_id")
+        if not isinstance(upload_id, int):
+            raise IftyEditsError("YouTube upload job has no upload_id")
+        from iftyedits.services.youtube_upload import build_youtube_service
+
+        progress.message = "Checking the approval"
+
+        def on_progress(fraction: float, message: str) -> None:
+            progress.fraction = fraction
+            progress.message = message
+
+        service = build_youtube_service(self.settings, self.conn)
+        record = service.run_upload(
+            upload_id, on_progress=on_progress, cancelled=progress.cancel.is_set
+        )
+        return (
+            {"upload_id": upload_id, "youtube_video_id": record.youtube_video_id},
+            f"Uploaded to YouTube as {record.details.get('visibility')}",
+        )
 
     def _download_model(self, job: Job, progress: _Progress) -> tuple[dict[str, Any], str]:
         name = str(job.payload.get("model", ""))

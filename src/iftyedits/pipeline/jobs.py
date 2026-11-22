@@ -32,6 +32,7 @@ ANALYZE_CLIPS = "analyze_clips"
 RENDER_SHORT = "render_short"
 FETCH_URL = "fetch_url"
 PRODUCE_VIDEO = "produce_video"
+UPLOAD_YOUTUBE = "upload_youtube"
 ACTIVE_STATUSES = (JobStatus.QUEUED.value, JobStatus.RUNNING.value)
 CANCELLED_MESSAGE = "Cancelled by user"
 _COLUMNS = (
