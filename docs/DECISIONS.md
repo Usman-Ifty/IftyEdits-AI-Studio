@@ -497,3 +497,64 @@ multilingual footage. Real-media validation is mandatory before any release (Pha
 repeating the same milestone. All automated gates pass.
 
 **Trade-offs.** Entertainment quality and real-world multilingual performance are unvalidated.
+
+## D30 — Phase 5 UI: group views instead of rewriting them (2026-11-22)
+
+**Decision.** Navigation has eight sections. Sections that combine views (My Videos, Clip Editor)
+run the existing view scripts with `runpy` through `ui/chrome.py`. An embed flag, reset by
+`Home.py` on every rerun, turns page titles into section headings, and `chrome.halt()` replaces
+`st.stop()` so one empty view cannot hide its neighbours. No UI library was added.
+
+**Why.** It keeps every working page and its tests, and removes the nine-entry sidebar.
+
+**Trade-offs.** `chrome.py` imports Streamlit, a deliberate exception to "ui has no I/O". Views
+that run in a section share one session, so widget keys must stay unique across them.
+
+## D31 — Phase 6: a provider-neutral text model, off by default (2026-11-22)
+
+**Decision.** AI writing and review use a small `TextModel` protocol with one adapter for any
+OpenAI-compatible chat endpoint (standard library `urllib`, no SDK). The default endpoint is local
+Ollama, and AI stays off until `IFTYEDITS_LLM_MODEL` is set. With no model the studio says so and
+offers manual writing and a manual review; it never fills fields with canned text.
+
+**Why.** No provider existed, local-first processing is a project priority, and a hosted SDK would
+add a dependency and send private transcripts out by default.
+
+**Trade-offs.** The owner must run or point to a model. Output quality is model-dependent, so every
+reply is validated and labelled as AI output.
+
+## D32 — Readiness is derived, confirmation is fingerprinted (2026-11-22)
+
+**Decision.** Readiness is a pure function of saved facts. Only the owner's checklist ticks,
+choices and final confirmation are stored. A confirmation stores the export id and a SHA-256
+fingerprint of export, clip, metadata, rights and choices; a mismatch withdraws it. Risk levels are
+set by fixed rules from validated flags, never by the model. Reviews and flag resolutions are
+append-only. Rights belong to the source video and keep an audit trail.
+
+**Why.** Stale approvals are the main way a gate becomes misleading. Deriving state avoids drift,
+and append-only history means a concern is never silently cleared.
+
+**Trade-offs.** Any edit after confirming means confirming again. "Ready" is deliberately weaker
+than "cleared": see docs/PUBLISHING.md.
+
+## D33 — Phase 6.10: Claude through the existing text model, standard library client (2026-11-22)
+
+**Decision.** Claude is a second `TextModel` adapter (`adapters/claude.py`) that calls the
+Messages API with `urllib`; no Anthropic SDK dependency was added. A small router
+(`adapters/ai_router.py`) is the only place that picks a provider. Modes: `ollama` (default, no
+external AI call), `claude` (no fallback) and `hybrid` (Claude first, local fallback; choosing
+hybrid is the explicit opt-in). A fallback is always visible: the stored model reads
+`ollama:<model>` and the result carries a notice. Usage (tokens, provider, model, feature, time)
+goes to `ai_usage` (migration 0009); choices go to `ai_settings`. Neither holds secrets or prompt
+text. The key is read only from `ANTHROPIC_API_KEY`. Limits are per calendar month (UTC), count
+only Claude, and a hard limit blocks before the request is made. A USD limit with no configured
+prices cannot be enforced and fails closed when hard.
+
+**Why.** One blocking request at a time against one endpoint does not need an SDK and its HTTP
+stack. Keeping the router thin avoids a second provider framework and leaves Phase 6 services
+unchanged apart from labelling.
+
+**Trade-offs.** Retry and error handling are written by hand and verified only against a local
+stub of the wire format, not the live API. Prices are user-supplied, so cost is an estimate or
+"unknown", never an invoice. A bad Claude answer (invalid JSON, truncation) is not retried on the
+local model, so quality differences stay visible.

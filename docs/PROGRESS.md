@@ -698,3 +698,87 @@ Known limitation: fast sideways action can leave the 9:16 window.
 
 Next: Phase 5, UI/UX modernization.
 Never mark a phase COMPLETE until all its acceptance criteria are verified.
+
+## Phase 5 (UI) — UI/UX modernization (2026-11-22)
+
+Status: IMPLEMENTED, awaiting owner review. Nothing committed.
+
+Done:
+- Nine sidebar entries came from nine `st.Page` registrations in `app/Home.py`. They are now
+  eight, in workflow order, with Material icons and a brand block: Dashboard, Create Shorts,
+  My Videos (Library + Transcripts tabs), Clip Editor (Review candidates / Edit Short),
+  Finished Shorts, Processing Queue, Settings, Guides & Help. Every earlier view script still
+  runs unchanged inside its section, so no capability was removed.
+- `ui/chrome.py` (the one `ui` module that imports Streamlit): embedded headings, `halt()` (a
+  `st.stop()` that ends only the current view inside a section) and `run_view()`.
+- `services/journey.py`: read-only seven-step progress of the newest video; `theme.journey` draws it
+  on Dashboard, Create Shorts and Guides & Help.
+- Dashboard quick actions; Finished Shorts gallery (cards, on-demand video preview limited to the
+  exports folder, file location); Processing Queue status counts; Settings page; guide text
+  renamed. Clips "Edit as a Short" uses an `on_click` callback inside the Clip Editor.
+- Theme: scoped CSS only (journey, brand, gallery card, empty state, wrapping code blocks).
+- Dependencies: none added. Streamlit components plus CSS cover the design; third-party
+  component libraries were not adopted (extra dependency and breakage risk, no feature needed).
+
+Results: ruff, format and mypy clean; `IFTYEDITS_REQUIRE_FFMPEG=1 uv run pytest`: 1037 passed,
+1 skipped (new: `tests/unit/test_ui_phase5.py`; two wording assertions updated, none weakened).
+Browser (isolated library, never `data/`): all eight pages at 390 px have page width 390 with no
+horizontal scroll and no Streamlit exception; the gallery Preview plays; Clips to Edit Short
+hand-off switches step; server log has no errors.
+
+Known limitations:
+- Data tables scroll sideways inside their own box at 390 px (the page itself does not).
+- Browser console shows 404s for expired Streamlit media after reloads; harmless, not investigated.
+- Settings is read-only: values change through environment variables or `.env`.
+- Service error messages still name old page titles in a few places (for example "Clips page").
+- Real-media validation limits from Phase 4C still apply.
+
+Next recommended: SEO metadata and the safety review (roadmap Phases 4 and 6). Acceptance:
+titles, descriptions and tags generated and editable per Short; a rights and policy checklist the
+user must confirm before any export is marked upload-ready; no upload without explicit approval.
+
+## Phase 6 — Metadata, safety review, rights and upload readiness (2026-11-22)
+
+Status: implemented, verified by the gates below, awaiting owner review. Uncommitted.
+
+- 6A metadata engine, 6B upload package, 6C advisory review, 6D rights center, 6E readiness gate,
+  6F interface (Clip Editor → Upload package; Finished Shorts hand-off; Settings AI tab), 6G
+  persistence (migration 0008, additive) and tests, 6H docs: done. See docs/PUBLISHING.md.
+- Gates: Ruff clean, format clean (158 files), mypy clean, `IFTYEDITS_REQUIRE_FFMPEG=1 uv run
+  pytest -q`: 1114 passed, 1 skipped (the skip pre-dates this phase; Phase 5 had the same one).
+- New tests: 41 core, 26 service, 8 UI. Two existing assertions updated from schema v7 to v8.
+- Browser: isolated library, upload package page, saving a title, the Finished Shorts hand-off
+  and a 390px audit of all 8 pages and 6 tabs showed no horizontal overflow. The full confirm
+  flow was not driven in the browser; it is covered by service and AppTest tests.
+
+Limitations: no real model was run (a fake `TextModel` only), so real output quality and the
+live Ollama path are unverified; a non-local endpoint receives transcripts; the thumbnail is a
+plan plus a real still, not a rendered image; review reads transcript text only; no YouTube
+upload (out of scope); the review is advisory, not a policy or copyright guarantee. The browser
+console showed two 404s on static assets, not investigated (Phase 5 noted the same).
+
+Next: Phase 7, approved YouTube upload or analytics. Acceptance: explicit per-upload approval
+tied to the confirmed fingerprint, private-by-default, OAuth tokens kept out of Git and logs,
+no automatic publish or schedule, and tests with a fake uploader.
+
+## Phase 6.9 — Validation pass (2026-11-22)
+
+See docs/VALIDATION_PHASE_6_9.md. No provider is available (Ollama not installed), so live AI
+quality is unvalidated. Added HTTP-level adapter tests and readiness/package tests (27 tests).
+Fixed: the package exposed an absolute export path. 404s explained (deep-link health probes).
+Gates: 1141 passed, 1 skipped; Ruff, format and mypy clean.
+
+## Phase 6.10 — Hybrid AI providers: Claude + Ollama (2026-11-22)
+
+Status: implemented and mock-tested; awaiting owner review. Uncommitted. See
+docs/AI_PROVIDERS.md and docs/PHASE_6_10_VALIDATION.md.
+
+- Claude adapter (`adapters/claude.py`, stdlib, no new dependency, D33), router
+  (`adapters/ai_router.py`), usage accounting (`core/usage.py`, `storage/ai.py`, migration 0009),
+  Settings → AI writing and review (provider, status, limits, usage), service labelling.
+- Gates: Ruff clean, format clean, mypy clean (157 files), `IFTYEDITS_REQUIRE_FFMPEG=1 uv run
+  pytest -q`: 1196 passed, 1 skipped (pre-existing real-model skip). 55 new tests.
+- Not validated: any real Claude or Ollama call. No API key is configured and Ollama is not
+  installed, so only stub-server and fake-model tests ran.
+
+Next: owner adds `ANTHROPIC_API_KEY` to `.env`, then one controlled real call (see validation doc).

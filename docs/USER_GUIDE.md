@@ -67,7 +67,16 @@ folder (or set `IFTYEDITS_HOME`); from another folder they open a different, emp
 
 The sidebar has five pages: Overview, Import, Library, Transcripts and Jobs.
 
-### Overview
+### Navigation (Phase 5)
+
+The sidebar has eight sections in workflow order: **Dashboard**, **Create Shorts**, **My Videos**,
+**Clip Editor**, **Finished Shorts**, **Processing Queue**, **Settings** and **Guides & Help**.
+Nothing was removed: **My Videos** holds the video list (Videos tab) and Transcripts; **Clip
+Editor** holds Review candidates and Edit Short. *Edit as a Short* on a candidate opens it in
+the Edit Short step. A seven-step tracker (Paste link, Import video, Analyze, Generate clips,
+Review candidates, Edit Short, Export) shows how far your newest video has got.
+
+### Dashboard
 
 - **Videos**, **Library size**, **Media prepared**, **Transcribed** and **Active jobs** counters.
 - A notice when videos still need media preparation or a preparation stage failed.
@@ -75,14 +84,14 @@ The sidebar has five pages: Overview, Import, Library, Transcripts and Jobs.
 - **Storage**: where your data, the originals vault, generated files, exports, speech models
   and the database are.
 
-### Getting started
+### Guides & Help
 
-A short in-app walkthrough (sidebar: **Getting started**). It can be reopened any time; the
-welcome box on Overview has a **Hide this welcome** button that stays hidden.
+A short in-app walkthrough (sidebar: **Guides & Help**). It can be reopened any time; the
+welcome box on the Dashboard has a **Hide this welcome** button that stays hidden.
 
 ### Import: YouTube link (Phase 4)
 
-1. Open **Import**, tab **YouTube link**. Paste a watch, youtu.be or Shorts link. Playlists,
+1. Open **Create Shorts**, tab **YouTube link**. Paste a watch, youtu.be or Shorts link. Playlists,
    channels and live streams are refused.
 2. Tick **I have permission to use this video**. The app cannot know your rights; downloading
    does not make reuse allowed, and it never uses logins, cookies or DRM workarounds. Private,
@@ -90,8 +99,8 @@ welcome box on Overview has a **Hide this welcome** button that stays hidden.
 3. Choose how many Shorts, the minimum score and a caption style.
 4. **Produce Shorts** runs the whole pipeline in one job. **Download only** just fetches and
    imports the video. A link already downloaded is reused, not downloaded again.
-5. Follow it on **Jobs**; when finished, the per-clip summary shows status, length, size and
-   output path. **Exports** lists every finished MP4, grouped by source video.
+5. Follow it on **Processing Queue**; when finished, the per-clip summary shows status, length, size and
+   output path. **Finished Shorts** shows every finished MP4 as a gallery card with a Preview button and its file location.
 
 The same pipeline is available from the **Library** page (**Produce Shorts** per video) and
 the CLI (`iftyedits produce`). Each clip is its own file; one failing clip does not affect the
@@ -364,7 +373,7 @@ Data folders (never committed to Git):
   speech tests so far used synthetic voices (Spanish and German included) and generated video;
   no real podcast, sports, slides, noisy-recording or multilingual footage has been run. Clip
   suggestions are scored by explainable signals, not by how entertaining a clip is.
-- There is no uploading or metadata generation yet. HDR video is not tone-mapped. Automatic
+- There is no uploading. Metadata and review need an optional AI model (Phase 6). HDR video is not tone-mapped. Automatic
   framing follows image detail with a smooth moving crop; it is not face or speaker tracking.
   Adjust the crop in the Short editor.
 - Link ingestion depends on yt-dlp and YouTube; if YouTube changes, update yt-dlp. Renders are made one at a time.
@@ -383,3 +392,25 @@ Data folders (never committed to Git):
 - The worker runs one job at a time.
 - Videos cannot be deleted from the library through the app.
 - The dashboard is local-only (`127.0.0.1`) and has no login.
+
+### Processing Queue and Settings (Phase 5)
+
+**Processing Queue** counts running, queued, completed, failed and cancelled jobs (among the
+latest 100), lists active jobs with Cancel, and keeps Retry for failed or cancelled productions.
+**Settings** shows free disk space, where data is stored, the transcription and clip settings in
+effect, and diagnostics (FFmpeg, FFprobe, worker, database version). Values come from
+`IFTYEDITS_` environment variables or `.env`; the page does not edit them. Its one switch hides
+or shows the Dashboard welcome card.
+
+## Upload package (Phase 6)
+
+Open **Clip Editor → Upload package**, or **Finished Shorts → Review upload package**. Pick a
+Short, then work through the tabs: **Metadata** (generate or write title, description, hashtags,
+search tags; copy boxes), **Thumbnail** (pick a real frame), **Safety review** (run the advisory
+review or record your own), **Rights** (what you know about the source), **Checklist** (your
+choices and confirmations, then the final confirm), **Package** (save JSON or TXT).
+
+AI is off until you set up a local model or a Claude API key (Settings → AI writing and review
+shows how and lets you choose Local, Claude or Hybrid, with monthly limits and usage). Without
+it you write everything yourself. Each result shows which provider wrote it. The studio never uploads. "Ready for upload (you confirmed)" only means
+you finished the checklist; it is not legal or policy clearance. Details: [PUBLISHING.md](PUBLISHING.md).

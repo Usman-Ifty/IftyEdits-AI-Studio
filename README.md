@@ -94,7 +94,7 @@ Shorts**, or run `iftyedits produce <link>`. One job downloads the video, prepar
 transcribes, finds the best moments, picks a steady crop and exports each chosen clip as its
 own 1080x1920 MP4 in `data/exports/shorts/<title>-v<id>/`. Each file is checked with ffprobe.
 Re-running reuses finished stages and never overwrites an export. Needs a running worker
-(`iftyedits ui` starts one). **Exports** lists the files; **Getting started** walks through it.
+(`iftyedits ui` starts one). **Finished Shorts** lists the files; **Guides & Help** walks through it.
 `--review` lists the picks without rendering; `--min-length` and `--max-length` bound clip
 length. Weak clips are never added to reach the count. When the picture is wide the crop can
 follow the busiest part of the scene smoothly (it does not recognise faces); a crop you set by
@@ -204,3 +204,23 @@ Relative paths resolve against `IFTYEDITS_HOME`, or the current directory if uns
 | `IFTYEDITS_URL_MAX_DURATION_S` | `14400` | Refuse links to videos longer than this |
 | `IFTYEDITS_URL_DOWNLOAD_TIMEOUT_S` | `3600` | Limit for one download |
 | `IFTYEDITS_URL_MAX_FILESIZE_MB` | `4096` | Largest download accepted |
+| `IFTYEDITS_AI_PROVIDER` | `ollama` | `ollama`, `claude` or `hybrid` (Settings can override) |
+| `ANTHROPIC_API_KEY` | empty | Claude API key; hidden, never stored in the database |
+| `IFTYEDITS_CLAUDE_MODEL` | `claude-sonnet-5-5` | Claude model id |
+| `IFTYEDITS_ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | Claude API address |
+| `IFTYEDITS_CLAUDE_TIMEOUT_S` / `IFTYEDITS_AI_MAX_RETRIES` | `120` / `2` | Claude time limit and bounded retries |
+| `IFTYEDITS_AI_MAX_OUTPUT_TOKENS` | `2048` | Largest reply requested per call |
+| `IFTYEDITS_AI_MONTHLY_BUDGET_USD` / `_TOKEN_LIMIT` | `0` | Monthly Claude limits (0 = none) |
+| `IFTYEDITS_AI_BUDGET_HARD` | `false` | Block Claude calls at the limit instead of only warning |
+| `IFTYEDITS_CLAUDE_PRICE_INPUT_PER_MTOK` / `_OUTPUT_` | empty | USD per million tokens, needed for USD limits and cost estimates |
+| `IFTYEDITS_LLM_MODEL` | empty | Model name for AI writing and review; empty turns AI off |
+| `IFTYEDITS_LLM_BASE_URL` | `http://127.0.0.1:11434/v1` | OpenAI-compatible endpoint (default local Ollama) |
+| `IFTYEDITS_LLM_API_KEY` | empty | Optional bearer key, never shown or logged |
+| `IFTYEDITS_LLM_TIMEOUT_S` | `180` | Per-request time limit |
+| `IFTYEDITS_LLM_MAX_TRANSCRIPT_CHARS` | `12000` | Transcript characters sent per request |
+
+## Upload preparation (Phase 6)
+
+Per-Short metadata, advisory content review, source rights tracking and a readiness checklist,
+inside the Clip Editor. Optional AI uses a local model (Ollama), Claude (API key) or both (hybrid);
+see [docs/AI_PROVIDERS.md](docs/AI_PROVIDERS.md). Nothing is uploaded. See [docs/PUBLISHING.md](docs/PUBLISHING.md).

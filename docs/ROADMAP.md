@@ -636,7 +636,23 @@ For every phase, record:
 Never mark a phase COMPLETE until all its acceptance criteria are verified.
 
 
+# Phase 5 (UI) — UI/UX modernization (implemented 2026-11-22, awaiting owner review)
+
+Not to be confused with the older "Phase 5 — Export and batch" above, whose single-Short export
+and one-click production already shipped in Phases 3C and 4. Acceptance: eight-section sidebar
+with every earlier page still reachable; journey tracker; dashboard, gallery and queue counts
+from real data; Settings and Guides & Help; no horizontal overflow at 390 px; all gates green.
+Implemented and verified except the limits listed in PROGRESS.md.
+
 # Phase 4C — Production QA (accepted 2026-11-22 with a documented real-media gap)
 
 See [PHASE_4C_AUDIT.md](PHASE_4C_AUDIT.md). Gap: validation on permitted real podcast, sports,
 slides, noisy and multilingual media is a mandatory Phase 9 pre-release item. Fast sideways action is a known framing limit.
+
+
+# Phase 6 — Metadata, safety review, rights and upload readiness (implemented 2026-11-22, awaiting owner review)
+
+6A metadata engine, 6B upload package, 6C advisory content review, 6D rights center, 6E readiness
+gate, 6F interface inside the Clip Editor and Finished Shorts, 6G persistence and tests, 6H docs:
+all implemented and verified except the limits in PROGRESS.md and docs/PUBLISHING.md. No upload,
+scheduling or publishing exists; YouTube upload stays out of scope until it is separately approved.

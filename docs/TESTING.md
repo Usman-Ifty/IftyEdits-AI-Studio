@@ -101,6 +101,12 @@ Layout:
   model or network; real FFmpeg scene detection is covered in
   `tests/integration/test_clip_signals_ffmpeg.py`.
 
+- `tests/unit/test_ui_phase5.py`: Phase 5 interface. Checks the eight navigation sections and that
+  every page file is registered or run by a section page, the `st.stop` handling inside grouped
+  pages, the Clips to Edit Short hand-off state, the journey tracker, the dashed empty state and
+  the queue counts, using Streamlit `AppTest`. Browser checks (390 px width, overflow, video
+  preview) are manual; see PROGRESS.md for the last run.
+
 Markers (declared in `pyproject.toml`; `--strict-markers` rejects unknown ones):
 
 - `ffmpeg`: needs the ffmpeg/ffprobe binaries.
@@ -267,3 +273,22 @@ These change files or state; run them deliberately:
 - `tests/unit/test_caption_matrix.py`, `tests/unit/test_reframing_matrix.py`: the matrices.
 - Manual media matrix and browser checks: see `docs/PHASE_4C_AUDIT.md`. Media tests so far use
   generated media. Real-media validation is a mandatory pre-release step, not yet done.
+
+## Phase 6 tests
+
+- `tests/unit/test_publish_core.py`: metadata parsing and cleaning, title/tag rules, safety parsing
+  (evidence vs inferred, key stability), rights validation, credit lines, every readiness gap.
+- `tests/unit/test_publishing_service.py`: fake-model generation, provider failure and junk replies,
+  field regeneration, stale metadata and review, dismissal with a note, rights history and
+  inheritance, full workflow with confirmation and revocation, missing and stray exports, package
+  export uniqueness.
+- `tests/unit/test_ui_publish.py`: Upload package page, no-AI behaviour, disabled confirmation,
+  manual review through the page, HTML escaping, Finished Shorts hand-off, Settings AI tab.
+- No test calls a real model or the network. Browser checks use an isolated library
+  (`IFTYEDITS_DATA_DIR` outside the repo).
+
+## AI providers (Phase 6.10)
+
+`tests/unit/test_ai_providers.py` (adapter against a local stub of the Anthropic Messages API,
+router modes, budgets, usage, persistence) and `tests/unit/test_ai_publishing_flow.py` (Phase 6
+workflows through the router, Settings tab). No test calls a real provider or needs a key.
