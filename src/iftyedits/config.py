@@ -89,6 +89,13 @@ class Settings(BaseSettings):
         default=SecretStr(""),
         validation_alias=AliasChoices("ANTHROPIC_API_KEY", "IFTYEDITS_ANTHROPIC_API_KEY"),
     )
+    youtube_client_secrets: Path | None = None
+    """OAuth client JSON downloaded from Google Cloud (Desktop app type). Optional."""
+    youtube_token_path: Path | None = None
+    """Where the sign-in token is kept; default ``~/.config/iftyedits/youtube_token.json``."""
+    youtube_chunk_mb: int = Field(default=8, ge=1, le=64)
+    youtube_daily_upload_limit: int = Field(default=5, ge=0)
+    """Soft limit on uploads started per day in this studio (0 = no limit)."""
     anthropic_base_url: str = "https://api.anthropic.com"
     claude_model: str = "claude-sonnet-5-5"
     claude_timeout_s: float = Field(default=120.0, gt=0, le=3600)

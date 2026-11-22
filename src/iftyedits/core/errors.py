@@ -136,3 +136,31 @@ class LlmFormatError(LlmError):
 
 class PublishError(IftyEditsError):
     """An upload-preparation action could not be completed (message says why)."""
+
+
+class YouTubeError(IftyEditsError):
+    """Base class for YouTube integration failures. ``kind`` is one of core.youtube.KIND_*."""
+
+    def __init__(self, message: str, kind: str = "other") -> None:
+        super().__init__(message)
+        self.kind = kind
+
+
+class YouTubeNotConfiguredError(YouTubeError):
+    """The OAuth client file is missing or the account is not connected."""
+
+
+class YouTubeAuthError(YouTubeError):
+    """Google rejected the credentials, or sign-in failed or was cancelled."""
+
+
+class YouTubeQuotaError(YouTubeError):
+    """The daily API quota or upload limit is used up. Retrying now will not help."""
+
+
+class YouTubeUploadError(YouTubeError):
+    """An upload failed for a reason other than authentication or quota."""
+
+
+class UploadNotApprovedError(YouTubeError):
+    """An upload was attempted without a valid, current approval of the exact details."""

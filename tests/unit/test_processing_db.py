@@ -69,7 +69,7 @@ def test_v2_to_v3_preserves_jobs_and_videos(tmp_path: Path) -> None:
     _seed_v2(conn)
     before = conn.execute("SELECT * FROM jobs ORDER BY id").fetchall()
 
-    assert db.migrate(conn) == 9  # through v3 to the latest schema (v9 adds AI usage)
+    assert db.migrate(conn) == 10  # through v3 to the latest schema (v10 adds YouTube uploads)
     after = conn.execute("SELECT * FROM jobs ORDER BY id").fetchall()
     assert [tuple(r)[:14] for r in after] == [tuple(r) for r in before]
     assert all(r["cancel_requested_at"] is None for r in after)
