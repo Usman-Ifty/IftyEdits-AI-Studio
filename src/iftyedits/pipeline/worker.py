@@ -545,6 +545,9 @@ class Worker:
             progress=on_progress,
             cancel=progress.cancel,
         )
+        failure = report.failure_message()
+        if failure:
+            raise IftyEditsError(failure)
         return report.as_result(), report.summary()
 
     def _render_short(self, job: Job, progress: _Progress) -> tuple[dict[str, Any], str]:

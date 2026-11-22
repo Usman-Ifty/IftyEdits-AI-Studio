@@ -31,11 +31,12 @@ from iftyedits.core.clip_models import CandidateDraft, ContentSignal, Evidence, 
 from iftyedits.core.signals import (
     boilerplate_match,
     boilerplate_share,
+    is_dangling_response,
     is_question,
     starts_with_connector,
 )
 
-CANDIDATES_VERSION = 2
+CANDIDATES_VERSION = 3
 """Bump when generation rules change, so stored analyses are not reused."""
 
 ANCHOR_KINDS = frozenset(
@@ -130,6 +131,8 @@ class _Timeline:
             quality += 0.4
         if not starts_with_connector(s.text):
             quality += 0.3
+        if i > 0 and is_dangling_response(s.text):
+            quality -= 0.4  # a reply to a line the clip would not contain
         if i in self.hooks or is_question(s):
             quality += 0.2
         if i > 0 and not self.sentences[i - 1].terminal:
@@ -219,8 +222,11 @@ def _start_choice(
         context = 0.0 if leading else 0.15 * min(1.0, (signal.start_s - sentences[i].start_s) / 8.0)
         return timeline.start_quality(i) + context - (0.05 * (first - i) if leading else 0.0), i
 
-    if signal.kind is SignalKind.HOOK or (leading and timeline.start_quality(first) >= 0.6):
-        return first  # a hook is the opening line by definition
+    reply = first > 0 and is_dangling_response(sentences[first].text)
+    if not reply and (
+        signal.kind is SignalKind.HOOK or (leading and timeline.start_quality(first) >= 0.6)
+    ):
+        return first  # a hook is the opening line by definition, unless it only answers a line
     return max(options, key=value)
 
 

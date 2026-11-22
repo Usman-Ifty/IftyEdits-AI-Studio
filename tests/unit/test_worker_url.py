@@ -6,6 +6,8 @@ import sqlite3
 import threading
 from pathlib import Path
 
+import pytest
+
 from iftyedits.config import Settings
 from iftyedits.core.errors import SourceDownloadError
 from iftyedits.core.models import JobStatus
@@ -95,5 +97,41 @@ def test_fetch_job_failure_is_readable_and_leaves_no_staging(
         assert job.status is JobStatus.FAILED
         assert "private" in (job.error or "")
         assert not list(settings.staging_dir.glob("url-*"))
+    finally:
+        worker.close()
+
+
+def test_production_where_every_clip_fails_is_a_failed_job(
+    settings: Settings, db_conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    from iftyedits.services.production import ClipOutcome, ProductionReport
+
+    def clip(rank: int, status: str, error: str | None) -> ClipOutcome:
+        return ClipOutcome(rank, f"k{rank}", "t", 70.0, 0.0, 20.0, status, error=error)
+
+    reports = {
+        "all_failed": ProductionReport(1, (clip(1, "failed", "encoder exploded"),) * 2, 5),
+        "partial": ProductionReport(1, (clip(1, "succeeded", None), clip(2, "failed", "x")), 5),
+        "none_eligible": ProductionReport(1, (), 5, note="no suggestions"),
+    }
+    worker = _worker(settings, Downloader())
+    try:
+        queue = JobQueue(db_conn)
+        outcomes = {}
+        for name, report in reports.items():
+            monkeypatch.setattr(
+                worker, "production", lambda r=report: SimpleNamespace(run=lambda **_: r)
+            )
+            job_id, _ = queue.enqueue_production({}, video_id=1)
+            worker.process_one()
+            job = queue.get(job_id)
+            assert job is not None
+            outcomes[name] = job
+        assert outcomes["all_failed"].status is JobStatus.FAILED
+        assert "encoder exploded" in (outcomes["all_failed"].error or "")
+        assert outcomes["partial"].status is JobStatus.SUCCEEDED
+        assert outcomes["none_eligible"].status is JobStatus.SUCCEEDED
     finally:
         worker.close()

@@ -243,6 +243,22 @@ def first_word(text: str) -> str:
     return found[0] if found else ""
 
 
+RESPONSE_OPENERS = frozenset(
+    {"no", "yes", "yeah", "yep", "nope", "wow", "right", "exactly", "really", "huh", "okay",
+     "ok", "sure", "true", "totally", "absolutely", "wait", "oh", "uh-huh", "mhm"}
+)  # fmt: skip
+RESPONSE_MAX_WORDS = 4
+
+
+def is_dangling_response(text: str) -> bool:
+    """True for a short reply ("No way.", "Wait, really?") that only makes sense after another line.
+
+    A clip that opens on one is missing the thing being answered.
+    """
+    found = tokens(text)
+    return 0 < len(found) <= RESPONSE_MAX_WORDS and found[0] in RESPONSE_OPENERS
+
+
 def starts_with_connector(text: str) -> bool:
     """True if the text opens with a continuation word (and, but, so, because...)."""
     return first_word(text) in CONNECTOR_STARTS

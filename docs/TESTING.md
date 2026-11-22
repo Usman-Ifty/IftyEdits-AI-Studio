@@ -254,3 +254,10 @@ These change files or state; run them deliberately:
 - `tests/integration/test_shorts_ffmpeg.py`: a moving crop exports a valid 1080x1920 Short.
 - Manual, not in CI: a real download of a Creative Commons video with `YtDlpDownloader`
   (needs network; no cookies). Run it only for videos you may download.
+
+## Phase 4C tests
+
+- `tests/unit/test_worker_url.py`: a production where every clip fails is a failed job; partial
+  success and "no eligible clip" stay successful.
+- `tests/unit/test_candidates.py`: clips do not open on a bare reply; `is_dangling_response`.
+- Manual media matrix and browser checks: see `docs/PHASE_4C_AUDIT.md`.

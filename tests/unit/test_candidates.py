@@ -155,3 +155,41 @@ def test_custom_durations_and_validation() -> None:
     assert all(len(sentences_in(evidence, d)) >= 1 for d in short)
     with pytest.raises(ValueError, match="minimum <= target <= maximum"):
         CandidateConfig(min_s=30, target_s=20, max_s=60)
+
+
+CONVERSATION = [
+    "Okay, so here is the thing nobody tells you about starting a podcast.",
+    "The first 50 episodes are basically practice.",
+    "Wait, really?",
+    "That sounds like a lot of work for nothing.",
+    "It is a lot of work, but here is the surprise.",
+    "Almost every successful show I know deleted their first 20 episodes.",
+    "No way.",
+    "Why would anyone delete episodes?",
+    "Because they were embarrassing, the audio was terrible.",
+    "The guests were awkward, and nobody had a clear idea what the show was about.",
+    "So what is the lesson?",
+    "The lesson is simple.",
+    "Publish before you feel ready, because you only get good by shipping.",
+    "That is the whole secret.",
+]
+
+
+def test_a_clip_never_opens_on_a_short_reply_to_an_earlier_line() -> None:
+    ev = evidence_for(script(CONVERSATION, wps=3.0))
+    drafts = generate_candidates(ev, CandidateConfig(min_s=8, target_s=20, max_s=40))
+    assert drafts
+    for d in drafts:
+        first = ev.sentences[d.first_sentence]
+        assert d.first_sentence == 0 or first.text.strip() not in {"No way.", "Wait, really?"}
+
+
+def test_dangling_response_detection() -> None:
+    from iftyedits.core.signals import is_dangling_response
+
+    for reply in ("No way.", "Wait, really?", "Huh."):
+        assert is_dangling_response(reply)
+    assert not is_dangling_response("Nobody tells you the first fifty episodes are practice.")
+    assert not is_dangling_response(
+        "No, I think the real problem is that nobody ships early enough."
+    )

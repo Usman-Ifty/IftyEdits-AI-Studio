@@ -175,6 +175,19 @@ class ProductionReport:
             "stages": self.stage_notes,
         }
 
+    def failure_message(self) -> str | None:
+        """Why the whole production failed, or None when at least one Short was made.
+
+        A run that tried to render clips and exported none must not look like a success.
+        """
+        rendered = [c for c in self.clips if c.status in (STATUS_SUCCEEDED, STATUS_FAILED)]
+        if not rendered or self.succeeded:
+            return None
+        reasons = "; ".join(
+            dict.fromkeys(f"{c.error or 'unknown error'}" for c in rendered if c.error)
+        )
+        return f"No Shorts could be exported ({self.failed} failed). {reasons}".strip()
+
     def summary(self) -> str:
         """One line for the jobs list."""
         if not self.clips:

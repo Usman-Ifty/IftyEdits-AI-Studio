@@ -677,3 +677,16 @@ explicit approval.
 
 ### Next recommended task
 SEO metadata and the safety review, then optional upload with explicit approval.
+
+## Phase 4C — Production QA and hardening (2026-11-22)
+
+Status: PARTIAL. Details and the media matrix are in [PHASE_4C_AUDIT.md](PHASE_4C_AUDIT.md).
+
+Done: false-success fix for all-failed production (P1), reply-opening boundary fix with
+`CANDIDATES_VERSION` 3, editor range truncation fix at phone width, two spoken fixtures run end
+to end and verified with ffprobe and a full decode, narrow-width browser check of Overview,
+Clips and Editor.
+
+Open: production-specific cancel/subprocess, disk-space and concurrency tests; the full
+reframing and caption matrices; performance measurements; log review; re-inspection of the
+remaining pages at narrow width. No real podcast, sports or multilingual media was tested.

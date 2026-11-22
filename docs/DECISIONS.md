@@ -461,3 +461,16 @@ reframing and captions, and a redesigned interface.
 
 **Consequences.** Without a detector the crop cannot keep a person in frame; adding one later
 means a new reading source for `follow_subject`, not a new render path.
+
+## D27 — Phase 4C: failed production is failed, replies do not open clips (2026-11-22)
+
+**Decision.** A production job whose rendered clips all failed ends `failed` with the clip
+reasons; any success keeps the job succeeded and the summary reports the failures. Candidate
+starts avoid short reply lines ("No way.") when an earlier setup line is available, and
+`CANDIDATES_VERSION` is 3.
+
+**Why.** The job status is what the owner reads first, so success with zero Shorts misleads.
+A clip that starts on an answer to a question it omits is not understandable alone.
+
+**Trade-offs.** The reply rule is a word-list heuristic (four words or fewer, English openers).
+Existing analyses are not rewritten; the version bump changes the parameter hash, so the next analysis stores a new one beside the old.

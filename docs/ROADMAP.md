@@ -631,3 +631,7 @@ For every phase, record:
 
 Never mark a phase COMPLETE until all its acceptance criteria are verified.
 
+
+# Phase 4C — Production QA (partially implemented 2026-11-22)
+
+See [PHASE_4C_AUDIT.md](PHASE_4C_AUDIT.md). Remaining items are listed in PROGRESS.md.

@@ -238,7 +238,7 @@ def on_reset_all() -> None:
 # ----------------------------------------------------------------------------- header
 
 h1, h2, h3, h4 = st.columns(4)
-h1.metric("AI suggestion", span_label(clip))
+h1.markdown(f"**AI suggestion**  \n{span_label(clip)}")  # a metric would ellipsize the range
 h2.metric("Score", f"{round(clip.score)}")
 h3.metric("Type", category_label(clip.category))
 h4.metric("Source", f"{info.width}x{info.height}" + ("" if info.has_audio else ", no audio"))
