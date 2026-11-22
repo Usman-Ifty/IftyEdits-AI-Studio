@@ -558,3 +558,21 @@ unchanged apart from labelling.
 stub of the wire format, not the live API. Prices are user-supplied, so cost is an estimate or
 "unknown", never an invoice. A bad Claude answer (invalid JSON, truncation) is not retried on the
 local model, so quality differences stay visible.
+
+## D34 — Phase 7: YouTube upload through a standard-library client, approval bound to a fingerprint (2026-11-22)
+
+**Decision.** YouTube support is optional and uses `urllib` (no Google client libraries, as in D33):
+OAuth for installed apps with a loopback redirect and PKCE, the `youtube.upload` scope plus
+`youtube.readonly` (only to show the destination channel), and the resumable upload protocol. Tokens
+are kept in a 0600 file outside the project and never in SQLite or logs. An upload is private or
+unlisted only. The owner approves a draft by typing a fixed sentence; the approval is a SHA-256
+fingerprint over file hash, title, description, tags, visibility, audience and channel, and the
+worker re-verifies it (re-hashing the file and re-reading the channel) before sending anything.
+
+**Why.** Public or automatic publishing would break the project's human-approval rule. Binding the
+approval to exact content removes the gap between "what I reviewed" and "what was sent".
+
+**Trade-offs.** Hand-written OAuth and resumable-upload code is verified only against a stub of
+Google's endpoints, not the live service. Quota figures in sources conflict, so the studio reports
+YouTube's actual errors instead of predicting quota. shadcn/ui was not adopted: it is a React/Tailwind
+component set and cannot be used inside Streamlit without a separate front-end rewrite.

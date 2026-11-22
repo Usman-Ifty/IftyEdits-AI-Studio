@@ -219,6 +219,14 @@ Relative paths resolve against `IFTYEDITS_HOME`, or the current directory if uns
 | `IFTYEDITS_LLM_TIMEOUT_S` | `180` | Per-request time limit |
 | `IFTYEDITS_LLM_MAX_TRANSCRIPT_CHARS` | `12000` | Transcript characters sent per request |
 
+## Optional YouTube upload (Phase 7)
+
+Connect a YouTube account in Settings (optional) and upload a confirmed Short as **Private or
+Unlisted** after typing an explicit approval of the exact details. The studio never publishes or
+schedules. Manual export remains available. Setup, limits and security: [docs/YOUTUBE.md](docs/YOUTUBE.md).
+Variables: `IFTYEDITS_YOUTUBE_CLIENT_SECRETS`, `IFTYEDITS_YOUTUBE_TOKEN_PATH`,
+`IFTYEDITS_YOUTUBE_CHUNK_MB`, `IFTYEDITS_YOUTUBE_DAILY_UPLOAD_LIMIT`.
+
 ## Upload preparation (Phase 6)
 
 Per-Short metadata, advisory content review, source rights tracking and a readiness checklist,

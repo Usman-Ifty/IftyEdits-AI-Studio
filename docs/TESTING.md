@@ -287,6 +287,11 @@ These change files or state; run them deliberately:
 - No test calls a real model or the network. Browser checks use an isolated library
   (`IFTYEDITS_DATA_DIR` outside the repo).
 
+## YouTube (Phase 7)
+
+`tests/unit/test_youtube.py` (rules, token file, OAuth, resumable upload, approval and verification,
+quota) and `tests/unit/test_ui_youtube.py` use a local stub of Google. No test needs credentials.
+
 ## AI providers (Phase 6.10)
 
 `tests/unit/test_ai_providers.py` (adapter against a local stub of the Anthropic Messages API,

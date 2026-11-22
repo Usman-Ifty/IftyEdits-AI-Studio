@@ -534,6 +534,8 @@ Require a human review and explicit approval before a clip can enter the publish
 - Provide a manual export workflow if OAuth is not configured.
 
 ### Phase 7 acceptance criteria
+
+_Status (2026-11-22): implemented and tested against a stub of Google's APIs; not yet verified against the real YouTube API. See docs/YOUTUBE.md._
 - OAuth is optional.
 - Tokens are protected.
 - User sees the exact upload details before approval.

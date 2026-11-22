@@ -790,3 +790,14 @@ Work committed locally on `phase/06-publishing-ai-providers`; GitHub push blocke
 lacks write access). Added Claude/local connection tests and clearer statuses. One real Short
 produced from a local file. No live AI call. Phase 6 code is complete; closing it still needs a live
 provider check and a push.
+
+## Phase 7 — Optional YouTube integration (2026-11-22)
+
+Branch `phase/07-youtube-integration`. See docs/YOUTUBE.md. Implemented: OAuth (loopback + PKCE),
+protected token file, channel lookup, resumable upload with resume and cancel, error/quota
+classification, approval bound to a fingerprint, background job `upload_youtube`, migration 0010,
+Upload package → YouTube tab, Settings → YouTube card, manual export unchanged.
+Verified: 59 service/adapter tests and 4 UI tests against a local stub; browser check of the Settings
+and YouTube tab (unconfigured and connected-but-not-ready states).
+Not verified: any call to the real Google/YouTube API (no OAuth client file), the full approve and
+upload flow in a browser, shadcn/ui (not compatible with Streamlit; not adopted).

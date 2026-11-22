@@ -414,3 +414,12 @@ AI is off until you set up a local model or a Claude API key (Settings → AI wr
 shows how and lets you choose Local, Claude or Hybrid, with monthly limits and usage). Without
 it you write everything yourself. Each result shows which provider wrote it. The studio never uploads. "Ready for upload (you confirmed)" only means
 you finished the checklist; it is not legal or policy clearance. Details: [PUBLISHING.md](PUBLISHING.md).
+
+## Uploading to YouTube (optional, Phase 7)
+
+Settings → YouTube explains the one-time setup (an OAuth client file from Google Cloud). Once connected
+and the checklist is confirmed, **Clip Editor → Upload package → YouTube → Review upload details**
+shows the exact channel, file, title, description, tags and visibility. Type `I approve this upload` to
+queue it. It uploads as Private or Unlisted only; open it in YouTube Studio to check and publish it
+yourself. Change anything after reviewing and you must review again. Without setup, use the Package
+tab to copy everything by hand. Details: [YOUTUBE.md](YOUTUBE.md).
