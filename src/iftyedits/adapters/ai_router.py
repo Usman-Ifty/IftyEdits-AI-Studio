@@ -15,6 +15,7 @@ Rules (see docs/AI_PROVIDERS.md):
 
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 import urllib.error
@@ -275,18 +276,74 @@ def build_text_model(
 
 
 def probe_ollama(settings: Settings, timeout_s: float = 3.0) -> str:
-    """Quick reachability check of the local endpoint (``GET <base>/models``). No prompt is sent."""
+    """Check the local endpoint without sending a prompt.
+
+    Reports whether the endpoint answers and whether the configured model is installed
+    (``GET <base>/models``). It does not prove the model can generate; see :func:`check_local`.
+    """
     url = settings.llm_base_url.rstrip("/") + "/models"
     if not url.startswith(("http://", "https://")):
         return "The endpoint must be an http:// or https:// address."
+    host = endpoint_host(settings.llm_base_url) or "that address"
     try:
         with urllib.request.urlopen(url, timeout=timeout_s) as response:  # noqa: S310
-            response.read(2000)
-        return "reachable"
+            raw = response.read(1_000_000)
     except urllib.error.HTTPError as exc:
-        return f"reachable, but answered HTTP {exc.code}"
+        return f"The endpoint at {host} answered HTTP {exc.code}."
     except (urllib.error.URLError, OSError):
-        return f"not reachable at {endpoint_host(settings.llm_base_url) or 'that address'}"
+        return f"Nothing is listening at {host}. Is Ollama installed and running?"
+    wanted = settings.llm_model.strip()
+    try:
+        data = json.loads(raw)
+        names = [str(m.get("id", "")) for m in data.get("data", []) if isinstance(m, dict)]
+    except (ValueError, AttributeError):
+        return f"Reachable at {host}, but the model list could not be read."
+    if not wanted:
+        have = ", ".join(names[:8]) or "none installed"
+        return f"Reachable at {host}. Set IFTYEDITS_LLM_MODEL to one of: {have}."
+    if wanted not in names:
+        have = ", ".join(names[:8]) or "none installed"
+        return f"Reachable at {host}, but model '{wanted}' is not installed (installed: {have})."
+    return f"Reachable at {host}; model '{wanted}' is installed."
+
+
+def check_claude(settings: Settings) -> str:
+    """One tiny live request with a synthetic prompt. Sends no project data; uses real tokens."""
+    problem = claude_ready(settings)
+    if problem:
+        return f"Not tested: {problem}"
+    model = AnthropicModel(
+        settings.anthropic_base_url,
+        settings.claude_model,
+        settings.anthropic_api_key.get_secret_value(),
+        min(settings.claude_timeout_s, 30.0),
+        max_retries=0,
+    )
+    try:
+        model.complete("Reply with the single word OK.", "ping", max_tokens=16)
+    except LlmError as exc:
+        return f"Claude test failed: {exc}"
+    used = model.last_usage
+    tail = f" ({used.input_tokens} in / {used.output_tokens} out tokens)" if used else ""
+    return f"Claude answered with model {settings.claude_model}{tail}."
+
+
+def check_local(settings: Settings) -> str:
+    """One tiny generation on the local model with a synthetic prompt."""
+    problem = ollama_ready(settings)
+    if problem:
+        return f"Not tested: {problem}"
+    model = OpenAICompatibleModel(
+        settings.llm_base_url,
+        settings.llm_model.strip(),
+        settings.llm_api_key.get_secret_value(),
+        min(settings.llm_timeout_s, 60.0),
+    )
+    try:
+        model.complete("Reply with the single word OK.", "ping", max_tokens=16)
+    except LlmError as exc:
+        return f"Local model test failed: {exc}"
+    return f"Local model {settings.llm_model.strip()} answered."
 
 
 def with_mode(config: AiConfig, mode: str) -> AiConfig:
@@ -298,6 +355,8 @@ __all__ = [
     "AiConfig",
     "RoutedModel",
     "build_text_model",
+    "check_claude",
+    "check_local",
     "claude_ready",
     "current_month",
     "is_local",

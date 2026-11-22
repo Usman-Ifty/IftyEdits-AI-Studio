@@ -14,6 +14,8 @@ from contextlib import closing
 import streamlit as st
 
 from iftyedits.adapters.ai_router import (
+    check_claude,
+    check_local,
     claude_ready,
     current_month,
     month_budget,
@@ -84,13 +86,18 @@ def _ai_panel(conn: sqlite3.Connection) -> None:
         st.markdown("**Claude**")
         st.markdown(
             theme.pill(
-                "Ready" if claude_problem is None else "Not configured",
+                "Key set, not tested" if claude_problem is None else "Not configured",
                 "good" if claude_problem is None else "muted",
             ),
             unsafe_allow_html=True,
         )
         st.caption(f"Model: {settings.claude_model}")
         st.caption("API key: set (hidden)" if claude_problem is None else f"{claude_problem}")
+        if claude_problem is None and st.button("Test Claude (tiny request)", key="ai_claude_test"):
+            with st.spinner("Asking Claude to say OK…"):
+                st.session_state["ai_claude_result"] = check_claude(settings)
+        if "ai_claude_result" in st.session_state:
+            st.caption(f"Test: {st.session_state['ai_claude_result']}")
         if claude_problem is not None:
             st.caption(
                 "Add ANTHROPIC_API_KEY to .env and restart. A Claude chat subscription is not "
@@ -100,7 +107,7 @@ def _ai_panel(conn: sqlite3.Connection) -> None:
         st.markdown("**Local model (Ollama)**")
         st.markdown(
             theme.pill(
-                "Named" if local_problem is None else "Not configured",
+                "Model named, not tested" if local_problem is None else "Not configured",
                 "good" if local_problem is None else "muted",
             ),
             unsafe_allow_html=True,
@@ -109,8 +116,13 @@ def _ai_panel(conn: sqlite3.Connection) -> None:
         st.caption(f"Endpoint: {endpoint_host(settings.llm_base_url)}")
         if not is_local(settings.llm_base_url):
             st.warning("This endpoint is not on your computer.")
-        if local_problem is None and st.button("Check local connection", key="ai_probe"):
+        if st.button("Check local connection", key="ai_probe"):
             st.session_state["ai_probe_result"] = probe_ollama(settings)
+        if local_problem is None and st.button(
+            "Test local model (tiny request)", key="ai_local_test"
+        ):
+            with st.spinner("Asking the local model to say OK…"):
+                st.session_state["ai_probe_result"] = check_local(settings)
         if "ai_probe_result" in st.session_state:
             st.caption(f"Connection: {st.session_state['ai_probe_result']}")
         if local_problem is not None:

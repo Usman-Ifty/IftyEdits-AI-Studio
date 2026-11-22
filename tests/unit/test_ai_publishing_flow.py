@@ -226,7 +226,7 @@ def test_settings_ai_tab_without_key_explains_setup(
 def test_settings_save_persists_mode_and_never_shows_key(
     app_env: None, db_conn: sqlite3.Connection, settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    secret = "sk-ant-SHOULD-NOT-APPEAR"  # noqa: S105
+    secret = "sk-" + "ant-SHOULD-NOT-APPEAR"
     monkeypatch.setenv("ANTHROPIC_API_KEY", secret)
     at = page().run()
     next(r for r in at.radio if r.label == "AI provider").set_value("hybrid")

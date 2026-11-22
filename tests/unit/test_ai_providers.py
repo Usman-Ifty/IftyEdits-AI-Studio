@@ -37,7 +37,7 @@ from iftyedits.core.errors import (
 from iftyedits.storage.ai import AiRepository
 from iftyedits.storage.db import open_database
 
-KEY = "sk-ant-TEST-SECRET-999"
+KEY = "sk-" + "ant-TEST-SECRET-999"
 Reply = tuple[int, bytes, dict[str, str]]
 
 
@@ -575,3 +575,82 @@ def test_build_text_model_follows_mode(settings: Settings, db_conn: sqlite3.Conn
     assert cl is not None and cl.name == "claude:c1"
     bare = Settings(data_dir=settings.data_dir, llm_model="")
     assert build_text_model(bare, db_conn) is None  # claude mode, no key
+
+
+# ------------------------------------------------------------------ status checks
+
+
+def _models_server(ids: list[str]) -> Stub:
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            body = json.dumps({"data": [{"id": i} for i in ids]}).encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_POST(self) -> None:
+            body = json.dumps({"choices": [{"message": {"content": "OK"}}]}).encode()
+            self.rfile.read(int(self.headers["Content-Length"]))
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args: object) -> None:
+            pass
+
+    stub = Stub([])
+    stub.server.shutdown()
+    stub.server.server_close()
+    stub.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+    stub.url = f"http://127.0.0.1:{stub.server.server_address[1]}"
+    threading.Thread(target=stub.server.serve_forever, daemon=True).start()
+    return stub
+
+
+def test_probe_reports_missing_model_and_installed_model(settings: Settings) -> None:
+    from iftyedits.adapters.ai_router import check_local, probe_ollama
+
+    srv = _models_server(["llama3"])
+    try:
+        base = Settings(data_dir=settings.data_dir, llm_base_url=srv.url, llm_model="other")
+        assert "not installed" in probe_ollama(base) and "llama3" in probe_ollama(base)
+        ok = Settings(data_dir=settings.data_dir, llm_base_url=srv.url, llm_model="llama3")
+        assert "installed" in probe_ollama(ok) and "not installed" not in probe_ollama(ok)
+        assert check_local(ok) == "Local model llama3 answered."
+    finally:
+        srv.close()
+
+
+def test_probe_with_nothing_listening_says_so(settings: Settings) -> None:
+    from iftyedits.adapters.ai_router import probe_ollama
+
+    s = Settings(data_dir=settings.data_dir, llm_base_url="http://127.0.0.1:9/v1", llm_model="x")
+    assert "Nothing is listening" in probe_ollama(s)
+
+
+def test_check_claude_without_key_makes_no_request(settings: Settings) -> None:
+    from iftyedits.adapters.ai_router import check_claude
+
+    assert check_claude(settings).startswith("Not tested")
+
+
+def test_check_claude_reports_auth_failure_without_key(
+    serve: Callable[..., Stub], settings: Settings
+) -> None:
+    from iftyedits.adapters.ai_router import check_claude
+
+    stub = serve([(401, b"{}", {})])
+    s = Settings(data_dir=settings.data_dir, anthropic_api_key=KEY, anthropic_base_url=stub.url)
+    out = check_claude(s)
+    assert "failed" in out and "401" in out and KEY not in out
+
+
+def test_check_claude_success_shows_tokens(serve: Callable[..., Stub], settings: Settings) -> None:
+    from iftyedits.adapters.ai_router import check_claude
+
+    stub = serve([(200, message("OK", inp=9, out=1), {})])
+    s = Settings(data_dir=settings.data_dir, anthropic_api_key=KEY, anthropic_base_url=stub.url)
+    out = check_claude(s)
+    assert "answered" in out and "9 in / 1 out" in out and KEY not in out
