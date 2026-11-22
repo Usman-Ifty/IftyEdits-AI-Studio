@@ -159,3 +159,16 @@ class SourceDownloader(Protocol):
     ) -> Path:
         """Download into ``directory`` (which must be empty and writable); return the file."""
         ...
+
+
+class TextModel(Protocol):
+    """A language model that answers one prompt with text. Adapters implement it."""
+
+    @property
+    def name(self) -> str:
+        """Model identifier recorded with every generated result."""
+        ...
+
+    def complete(self, system: str, user: str, *, max_tokens: int = 2048) -> str:
+        """Return the model's reply or raise a :class:`~iftyedits.core.errors.LlmError`."""
+        ...

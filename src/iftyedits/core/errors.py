@@ -108,3 +108,31 @@ class ShortRenderError(IftyEditsError):
 
 class SourceDownloadError(IftyEditsError):
     """A video could not be fetched from a URL. The message says why and what to do."""
+
+
+class LlmError(IftyEditsError):
+    """The configured language model could not produce a usable answer."""
+
+
+class LlmUnavailableError(LlmError):
+    """No language model is configured, or the endpoint cannot be reached."""
+
+
+class LlmRateLimitError(LlmError):
+    """The language model endpoint asked us to slow down."""
+
+
+class LlmBudgetError(LlmError):
+    """A hard monthly Claude limit has been reached, so no further Claude call is made."""
+
+
+class LlmTimeoutError(LlmError):
+    """The language model did not answer in time."""
+
+
+class LlmFormatError(LlmError):
+    """The model answered, but not in the structured form the studio needs."""
+
+
+class PublishError(IftyEditsError):
+    """An upload-preparation action could not be completed (message says why)."""
