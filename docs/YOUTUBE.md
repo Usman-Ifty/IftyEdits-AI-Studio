@@ -60,6 +60,30 @@ loopback redirect, PKCE and a random `state` check.
 - Do not rely on these numbers: the studio reports the real error YouTube returns.
   Sources: developers.google.com/youtube/v3/revision_history, /docs/videos/insert, /determine_quota_cost.
 
+## Trying it without Google (local stub)
+
+`scripts/dev_youtube_stub.py` is a development-only stand-in for Google's sign-in, channel and
+resumable-upload endpoints. It lets you walk the whole approval flow in the browser without a Google
+Cloud project. It is **not** Google: passing here proves the studio's own logic, not real YouTube
+behaviour.
+
+```bash
+uv run python scripts/dev_youtube_stub.py --port 8700 --delay 0.15
+```
+
+Point the studio at it with a client file whose `auth_uri`/`token_uri` use `http://127.0.0.1:8700/...`
+and these settings (loopback addresses are the only non-Google hosts the studio accepts):
+
+- `IFTYEDITS_YOUTUBE_CLIENT_SECRETS`, `IFTYEDITS_YOUTUBE_TOKEN_PATH` (outside the project)
+- `IFTYEDITS_YOUTUBE_API_BASE=http://127.0.0.1:8700/youtube/v3`
+- `IFTYEDITS_YOUTUBE_UPLOAD_BASE=http://127.0.0.1:8700/upload/youtube/v3`
+
+The stub's `/admin?channel=<id>&fail=quota|none` changes the signed-in channel or makes the next
+upload fail with a quota error, to test channel-mismatch refusal and retry.
+
+Any other host in the client file or API settings is refused (`trusted_endpoint`), so a tampered client
+file cannot send tokens elsewhere.
+
 ## Data
 
 Migration `0010_youtube.sql` adds `youtube_uploads` (status, the approved details as JSON, fingerprint,

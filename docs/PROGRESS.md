@@ -801,3 +801,20 @@ Verified: 59 service/adapter tests and 4 UI tests against a local stub; browser 
 and YouTube tab (unconfigured and connected-but-not-ready states).
 Not verified: any call to the real Google/YouTube API (no OAuth client file), the full approve and
 upload flow in a browser, shadcn/ui (not compatible with Streamlit; not adopted).
+
+### Phase 7 final QA pass (2026-11-22)
+
+Browser-tested at desktop, tablet (768) and mobile (375) against the local stub (`scripts/dev_youtube_stub.py`):
+Settings connect (state + PKCE accepted, token file 0600 in a 0700 dir), checklist confirm, exact
+details screen, typed approval gating, progress to completion, mid-upload cancel, quota failure then
+retry, duplicate guard, file changed after the draft (refused, nothing sent), channel changed after
+the draft (refused, nothing sent). Mobile: all 9 pages no horizontal overflow, no exceptions.
+Fixes found by that testing: the Upload package page jumped back to its first tab after any button
+press (tabs now keep their selection); cancelling showed "Failed" and lost the retry button (now
+"Cancelled by you" with a restart button); finished uploads showed fewer bytes than the file size;
+client file / API hosts are now limited to Google or loopback. Added a five-step upload tracker and a
+plain "what to do next" sentence. Console: the only 404s are Streamlit's `/<page>/_stcore/health` and
+`host-config` probes on deep links (it retries at the root and gets 200); connection-refused entries
+appear only while the server restarts. Neither is an app fault.
+Still unverified: the real Google OAuth consent screen, token expiry in Testing mode, real quota
+numbers, real upload. Phase 7 acceptance is met locally; real-Google confirmation is the open blocker.
