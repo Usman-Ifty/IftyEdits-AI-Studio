@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     clip_target_s: float = Field(default=40.0, gt=0, le=600)
     clip_max_s: float = Field(default=60.0, gt=0, le=600)
     clip_max_candidates: int = Field(default=20, ge=1, le=200)
+    url_max_duration_s: float = Field(default=4 * 3600.0, gt=0)
+    url_download_timeout_s: float = Field(default=3600.0, gt=0)
+    url_max_filesize_mb: int = Field(default=4096, ge=50)
     clip_max_overlap: float = Field(default=0.5, ge=0, le=1)
     clip_scene_threshold: float = Field(default=0.3, ge=0.05, le=0.95)
     clip_use_audio: bool = True

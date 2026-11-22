@@ -4,17 +4,28 @@ from __future__ import annotations
 
 import streamlit as st
 
-st.set_page_config(page_title="IftyEdits AI Studio", layout="wide")
+from iftyedits.ui.theme import CSS
+
+st.set_page_config(page_title="IftyEdits AI Studio", page_icon="🎬", layout="wide")
+st.markdown(CSS, unsafe_allow_html=True)
 
 navigation = st.navigation(
-    [
-        st.Page("views/overview.py", title="Overview", default=True),
-        st.Page("views/import_videos.py", title="Import"),
-        st.Page("views/library.py", title="Library"),
-        st.Page("views/transcripts.py", title="Transcripts"),
-        st.Page("views/clips.py", title="Clips"),
-        st.Page("views/editor.py", title="Short editor"),
-        st.Page("views/jobs.py", title="Jobs"),
-    ]
+    {
+        "Studio": [
+            st.Page("views/overview.py", title="Overview", icon="🏠", default=True),
+            st.Page("views/getting_started.py", title="Getting started", icon="🧭"),
+        ],
+        "Create": [
+            st.Page("views/import_videos.py", title="Import", icon="⬇️"),
+            st.Page("views/library.py", title="Library", icon="🎞️"),
+            st.Page("views/transcripts.py", title="Transcripts", icon="📝"),
+            st.Page("views/clips.py", title="Clips", icon="✨"),
+            st.Page("views/editor.py", title="Short editor", icon="✂️"),
+        ],
+        "Output": [
+            st.Page("views/exports.py", title="Exports", icon="📦"),
+            st.Page("views/jobs.py", title="Jobs", icon="⚙️"),
+        ],
+    }
 )
 navigation.run()

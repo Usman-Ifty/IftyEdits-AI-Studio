@@ -23,6 +23,7 @@ from iftyedits.adapters.ffmpeg import FFmpeg
 from iftyedits.adapters.ffprobe import FFprobe
 from iftyedits.adapters.model_store import build_model_store
 from iftyedits.adapters.scenes import FFmpegSceneDetector
+from iftyedits.adapters.ytdlp import YtDlpDownloader
 from iftyedits.config import Settings
 from iftyedits.core.errors import (
     IftyEditsError,
@@ -32,17 +33,21 @@ from iftyedits.core.errors import (
 )
 from iftyedits.core.models import ALL_STAGES, Artifact, Job, Stage
 from iftyedits.core.protocols import (
+    CancelToken,
     MediaProber,
     MediaTranscoder,
     SceneDetector,
+    SourceDownloader,
     SpeechModelStore,
     SpeechTranscriber,
 )
 from iftyedits.pipeline.jobs import (
     ANALYZE_CLIPS,
     DOWNLOAD_MODEL,
+    FETCH_URL,
     IMPORT_FILE,
     PROCESS_VIDEO,
+    PRODUCE_VIDEO,
     RENDER_SHORT,
     TRANSCRIBE_VIDEO,
     JobQueue,
@@ -50,14 +55,21 @@ from iftyedits.pipeline.jobs import (
 from iftyedits.services.clip_analysis import ClipAnalysisService
 from iftyedits.services.ingest import IngestService, build_vault
 from iftyedits.services.media_prep import MediaPrepService, clean_partials
+from iftyedits.services.production import (
+    ProductionOptions,
+    ProductionService,
+    Stages,
+)
 from iftyedits.services.shorts import ShortService
 from iftyedits.services.transcription import TranscriptionService, options_from_settings
+from iftyedits.services.url_ingest import UrlIngestService
 from iftyedits.storage.clips import ClipRepository
 from iftyedits.storage.db import open_database
 from iftyedits.storage.originals import assert_safe_output_path
 from iftyedits.storage.processing import ProcessingRepository
 from iftyedits.storage.shorts import ShortRepository
 from iftyedits.storage.transcripts import TranscriptRepository
+from iftyedits.storage.video_urls import VideoUrlRepository
 from iftyedits.storage.videos import VideoRepository
 
 logger = logging.getLogger(__name__)
@@ -66,6 +78,7 @@ ProberFactory = Callable[[Settings], MediaProber]
 TranscoderFactory = Callable[[Settings], MediaTranscoder]
 TranscriberFactory = Callable[[Settings], SpeechTranscriber]
 ModelStoreFactory = Callable[[Settings], SpeechModelStore]
+DownloaderFactory = Callable[[Settings], SourceDownloader]
 
 
 def default_prober(settings: Settings) -> MediaProber:
@@ -86,6 +99,14 @@ def default_export_transcoder(settings: Settings) -> MediaTranscoder:
 def default_transcriber(settings: Settings) -> SpeechTranscriber:
     """faster-whisper on the CPU (imported lazily on first use)."""
     return FasterWhisperTranscriber()
+
+
+def default_downloader(settings: Settings) -> SourceDownloader:
+    return YtDlpDownloader(
+        ffmpeg_path=settings.ffmpeg_path,
+        timeout_s=settings.url_download_timeout_s,
+        max_filesize_mb=settings.url_max_filesize_mb,
+    )
 
 
 def default_model_store(settings: Settings) -> SpeechModelStore:
@@ -113,6 +134,7 @@ class Worker:
         export_transcoder_factory: TranscoderFactory = default_export_transcoder,
         transcriber_factory: TranscriberFactory = default_transcriber,
         model_store_factory: ModelStoreFactory = default_model_store,
+        downloader_factory: DownloaderFactory = default_downloader,
         worker_id: str | None = None,
         poll_interval_s: float = 1.0,
         heartbeat_interval_s: float = 2.0,
@@ -137,6 +159,8 @@ class Worker:
         self._transcription: TranscriptionService | None = None
         self._clips: ClipAnalysisService | None = None
         self._shorts: ShortService | None = None
+        self._url_ingest: UrlIngestService | None = None
+        self.downloader_factory = downloader_factory
         self.ingest = IngestService(
             settings, VideoRepository(self.conn), self.prober, build_vault(settings)
         )
@@ -307,6 +331,10 @@ class Worker:
             return self._download_model(job, progress)
         if job.kind == RENDER_SHORT:
             return self._render_short(job, progress)
+        if job.kind == FETCH_URL:
+            return self._fetch_url(job, progress)
+        if job.kind == PRODUCE_VIDEO:
+            return self._produce(job, progress)
         raise IftyEditsError(f"Unknown job kind: {job.kind}")
 
     def _import(self, job: Job, progress: _Progress) -> tuple[dict[str, Any], str]:
@@ -398,6 +426,122 @@ class Worker:
             force=bool(job.payload.get("force", False)),
             job_id=job.id,
             worker_id=self.worker_id,
+            progress=on_progress,
+            cancel=progress.cancel,
+        )
+        return report.as_result(), report.summary()
+
+    def url_ingest(self) -> UrlIngestService:
+        """URL download service, created on first use."""
+        if self._url_ingest is None:
+            self._url_ingest = UrlIngestService(
+                self.settings,
+                self.ingest,
+                VideoRepository(self.conn),
+                VideoUrlRepository(self.conn),
+                self.downloader_factory(self.settings),
+            )
+        return self._url_ingest
+
+    def _fetch_url(self, job: Job, progress: _Progress) -> tuple[dict[str, Any], str]:
+        url = str(job.payload.get("url", ""))
+        progress.message = "Fetching the video"
+
+        def on_progress(fraction: float, message: str) -> None:
+            progress.fraction = fraction
+            progress.message = message
+
+        fetched = self.url_ingest().fetch(url, progress=on_progress, cancel=progress.cancel)
+        result: dict[str, Any] = {
+            "video_id": fetched.video.id,
+            "sha256": fetched.video.sha256,
+            "outcome": fetched.outcome.value,
+            "reused": fetched.reused,
+        }
+        message = (
+            "Already stored" if fetched.reused else f"Downloaded {fetched.video.original_filename}"
+        )
+        if job.payload.get("process"):
+            process_id, created = self.queue.enqueue_processing(fetched.video.id, ALL_STAGES)
+            result["process_job_id"] = process_id
+            message += f"; media preparation {'queued' if created else 'already queued'}"
+        return result, message
+
+    def production(self) -> ProductionService:
+        """The one-click pipeline, wired to this worker's services."""
+
+        def fetch(
+            url: str, report: Callable[[float, str], None], cancel: CancelToken | None
+        ) -> int:
+            fetched = self.url_ingest().fetch(
+                url, progress=report, cancel=cancel if isinstance(cancel, threading.Event) else None
+            )
+            return fetched.video.id
+
+        def prepare(
+            video_id: int,
+            options: ProductionOptions,
+            report: Callable[[float, str], None],
+            cancel: CancelToken | None,
+        ) -> None:
+            self.media().prepare(
+                video_id,
+                ALL_STAGES,
+                force=options.force,
+                worker_id=self.worker_id,
+                progress=report,
+                cancel=cancel,
+            )
+
+        def transcribe(
+            video_id: int,
+            options: ProductionOptions,
+            report: Callable[[float, str], None],
+            cancel: CancelToken | None,
+        ) -> None:
+            self.transcription().transcribe(
+                video_id,
+                options_from_settings(
+                    self.settings, model=options.model, language=options.language or "auto"
+                ),
+                force=options.force,
+                worker_id=self.worker_id,
+                progress=report,
+                cancel=cancel,
+            )
+
+        def analyze(
+            video_id: int,
+            options: ProductionOptions,
+            report: Callable[[float, str], None],
+            cancel: CancelToken | None,
+        ) -> None:
+            self.clips().analyze(
+                video_id,
+                force=options.force,
+                worker_id=self.worker_id,
+                progress=report,
+                cancel=cancel,
+            )
+
+        return ProductionService(
+            Stages(fetch, prepare, transcribe, analyze), self.shorts(), ClipRepository(self.conn)
+        )
+
+    def _produce(self, job: Job, progress: _Progress) -> tuple[dict[str, Any], str]:
+        options = ProductionOptions.from_payload(dict(job.payload.get("options") or {}))
+        url = job.payload.get("url")
+        progress.message = "Starting production"
+
+        def on_progress(fraction: float, message: str) -> None:
+            progress.fraction = fraction
+            if message:
+                progress.message = message
+
+        report = self.production().run(
+            url=str(url) if url else None,
+            video_id=job.video_id,
+            options=options,
             progress=on_progress,
             cancel=progress.cancel,
         )

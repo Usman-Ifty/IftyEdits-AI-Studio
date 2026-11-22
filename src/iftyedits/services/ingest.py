@@ -171,7 +171,32 @@ class IngestService:
         self, source: Path, *, progress: ProgressCallback | None = None
     ) -> ImportResult:
         """Import one file. Returns the stored video and whether it was new."""
-        resolved = self.validate_source(source)
+        return self._import(self.validate_source(source), progress)
+
+    def import_download(
+        self, downloaded: Path, *, progress: ProgressCallback | None = None
+    ) -> ImportResult:
+        """Import a file this application downloaded into its own staging area.
+
+        Only files directly inside a ``url-*`` folder of the staging directory are accepted;
+        everything else still goes through :meth:`import_video` and its checks.
+        """
+        try:
+            resolved = downloaded.resolve(strict=True)
+        except (FileNotFoundError, RuntimeError) as exc:
+            raise InvalidSourceError(f"File not found: {downloaded}") from exc
+        staging = self.settings.staging_dir.resolve()
+        if (
+            not resolved.is_file()
+            or resolved.parent.parent != staging
+            or not resolved.parent.name.startswith("url-")
+        ):
+            raise OriginalProtectionError(f"Not a download from the staging area: {resolved}")
+        if resolved.suffix.lower() not in self.settings.video_extensions:
+            raise UnsupportedMediaError(f"Unsupported file extension: {resolved.name}")
+        return self._import(resolved, progress)
+
+    def _import(self, resolved: Path, progress: ProgressCallback | None) -> ImportResult:
         self._require_video(resolved)
 
         duplicate = self._find_duplicate(resolved)

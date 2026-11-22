@@ -55,7 +55,9 @@ uv run streamlit run app/Home.py
 |---|---|
 | `iftyedits import PATH... [-r]` | Import files or folders now, in this process |
 | `iftyedits enqueue PATH... [-r] [--process]` | Queue files or folders for the worker; `--process` also prepares media |
-| `iftyedits worker [--once]` | Run queued jobs (imports, preparation, transcription, downloads) |
+| `iftyedits worker [--once]` | Run queued jobs (imports, preparation, transcription, downloads, production) |
+| `iftyedits fetch URL [--process]` | Queue a download of a YouTube link (only for videos you may use) |
+| `iftyedits produce SOURCE [--clips N] [--min-score S] [--captions P] [--force]` | Queue the whole link-to-Shorts pipeline for a link, video id or SHA-256 prefix |
 | `iftyedits process VIDEO... \| --all [--stage S] [--force]` | Queue media preparation (audio, proxy, thumbnail) |
 | `iftyedits models [list\|download NAME\|verify NAME]` | List, download or verify speech models |
 | `iftyedits transcribe VIDEO... \| --all [--model M] [--language L] [--force]` | Queue transcription |
@@ -82,8 +84,18 @@ hidden file, other extension, subfolder without `-r`) is listed with its reason.
 captions, adjust look and sound, render a preview and export an H.264/AAC MP4 (1080x1920,
 VideoToolbox when available, libx264 otherwise) to `data/exports/shorts/`. Captions are drawn
 with Pillow because the installed FFmpeg has no text filters. Planned, not built: face-aware
-reframing, transitions, multi-clip timelines, a CLI export command. See D24 in
+transitions, multi-clip timelines, emphasis words. See D24 and D25 in
 [docs/DECISIONS.md](docs/DECISIONS.md).
+
+## One-click production (Phase 4)
+
+Paste a YouTube link on **Import** (tick that you may use the video) and press **Produce
+Shorts**, or run `iftyedits produce <link>`. One job downloads the video, prepares media,
+transcribes, finds the best moments, picks a steady crop and exports each chosen clip as its
+own 1080x1920 MP4 in `data/exports/shorts/<title>-v<id>/`. Each file is checked with ffprobe.
+Re-running reuses finished stages and never overwrites an export. Needs a running worker
+(`iftyedits ui` starts one). **Exports** lists the files; **Getting started** walks through it.
+Downloading does not grant rights: you are responsible for being allowed to use each video.
 
 ## How import works
 
@@ -184,3 +196,6 @@ Relative paths resolve against `IFTYEDITS_HOME`, or the current directory if uns
 | `IFTYEDITS_CLIP_MAX_OVERLAP` | `0.5` | Largest overlap allowed between two suggestions (0 to 1) |
 | `IFTYEDITS_CLIP_SCENE_THRESHOLD` | `0.3` | FFmpeg scene-change sensitivity |
 | `IFTYEDITS_CLIP_USE_AUDIO` / `_USE_SCENES` | `true` | Use loudness and scene changes as evidence |
+| `IFTYEDITS_URL_MAX_DURATION_S` | `14400` | Refuse links to videos longer than this |
+| `IFTYEDITS_URL_DOWNLOAD_TIMEOUT_S` | `3600` | Limit for one download |
+| `IFTYEDITS_URL_MAX_FILESIZE_MB` | `4096` | Largest download accepted |

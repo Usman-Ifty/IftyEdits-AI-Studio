@@ -30,6 +30,8 @@ TRANSCRIBE_VIDEO = "transcribe_video"
 DOWNLOAD_MODEL = "download_model"
 ANALYZE_CLIPS = "analyze_clips"
 RENDER_SHORT = "render_short"
+FETCH_URL = "fetch_url"
+PRODUCE_VIDEO = "produce_video"
 ACTIVE_STATUSES = (JobStatus.QUEUED.value, JobStatus.RUNNING.value)
 CANCELLED_MESSAGE = "Cancelled by user"
 _COLUMNS = (
@@ -153,6 +155,50 @@ class JobQueue:
             if existing is not None:
                 return existing, False
             return self._insert(ANALYZE_CLIPS, {"video_id": video_id, "force": force}), True
+
+    def enqueue_url_fetch(self, url: str, *, process: bool = False) -> tuple[int, bool]:
+        """Queue a download of a validated canonical URL. Returns ``(job_id, created)``.
+
+        An active fetch or production of the same URL is reused.
+        """
+        with transaction(self.conn):
+            for kind in (FETCH_URL, PRODUCE_VIDEO):
+                existing = self._active(kind, "url", url)
+                if existing is not None:
+                    return existing, False
+            payload: dict[str, Any] = {"url": url}
+            if process:
+                payload["process"] = True
+            return self._insert(FETCH_URL, payload), True
+
+    def enqueue_production(
+        self,
+        options: dict[str, Any],
+        *,
+        url: str | None = None,
+        video_id: int | None = None,
+    ) -> tuple[int, bool]:
+        """Queue the whole pipeline for a canonical URL or a stored video.
+
+        Returns ``(job_id, created)``; an active production of the same input is reused.
+        """
+        if (url is None) == (video_id is None):
+            raise ValueError("Give either a url or a video_id")
+        with transaction(self.conn):
+            if url is not None:
+                existing = self._active(PRODUCE_VIDEO, "url", url) or self._active(
+                    FETCH_URL, "url", url
+                )
+            else:
+                existing = self._active(PRODUCE_VIDEO, "video_id", int(video_id or 0))
+            if existing is not None:
+                return existing, False
+            payload: dict[str, Any] = {"options": options}
+            if url is not None:
+                payload["url"] = url
+            else:
+                payload["video_id"] = video_id
+            return self._insert(PRODUCE_VIDEO, payload), True
 
     def enqueue_short_render(self, render_id: int, video_id: int) -> tuple[int, bool]:
         """Queue a Short preview or export; reuses an active job for the same render row.

@@ -239,3 +239,20 @@ def test_new_commands_have_help() -> None:
     assert args.stage == ["audio", "thumbnail"]
     with pytest.raises(SystemExit):
         parser.parse_args(["process", "1", "--stage", "subtitles"])
+
+
+def test_fetch_and_produce_queue_jobs(
+    settings: Settings, capsys: pytest.CaptureFixture[str]
+) -> None:
+    url = "https://youtu.be/abcdefghijk"
+    assert cli.cmd_fetch(settings, cli.build_parser().parse_args(["fetch", url])) == 0
+    out = capsys.readouterr()
+    assert "queued" in out.out and "watch?v=abcdefghijk" in out.out
+    produce = cli.build_parser().parse_args(["produce", url, "--clips", "2"])
+    assert cli.cmd_produce(settings, produce) == 0  # reuses the active fetch
+    assert "already queued" in capsys.readouterr().out
+    bad = cli.build_parser().parse_args(["fetch", "https://example.com/x"])
+    assert cli.cmd_fetch(settings, bad) == 2
+    assert "error:" in capsys.readouterr().err
+    low = cli.build_parser().parse_args(["produce", url, "--clips", "0"])
+    assert cli.cmd_produce(settings, low) == 2

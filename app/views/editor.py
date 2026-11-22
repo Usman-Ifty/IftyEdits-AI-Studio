@@ -247,6 +247,21 @@ with left:
         if geometry.is_full_frame:
             st.info("This video is already 9:16, so nothing is cropped.")
         else:
+            if st.button(
+                "Auto-frame",
+                key=k("af"),
+                help="Looks at a few frames of the saved clip range and moves the crop over "
+                "the busiest part of the picture. It does not recognise faces; check the guide.",
+            ):
+                with closing(open_database(settings.db_path)) as conn:
+                    try:
+                        found = _service(conn).suggest_crop(pid)
+                    except IftyEditsError as exc:
+                        st.error(str(exc))
+                    else:
+                        if found.method == "detail":
+                            st.session_state[k("crop")] = round(found.position * 100)
+                        st.info(found.note)
             st.slider(
                 "Crop position (0 = far left, 50 = center, 100 = far right)",
                 0,

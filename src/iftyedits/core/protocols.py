@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Protocol
@@ -16,6 +17,7 @@ from iftyedits.core.models import (
     TranscriptionOptions,
     TranscriptSegment,
 )
+from iftyedits.core.sources import SourceMetadata, VideoUrl
 
 
 class MediaProber(Protocol):
@@ -137,4 +139,23 @@ class SceneDetector(Protocol):
         cancel: CancelToken | None = None,
     ) -> list[SceneCut]:
         """Scene cuts with their scores. Raises ``ExternalToolError`` if decoding fails."""
+        ...
+
+
+class SourceDownloader(Protocol):
+    """Fetches metadata for, and downloads, one video from a validated URL."""
+
+    def fetch_metadata(self, url: VideoUrl) -> SourceMetadata:
+        """Ask the site about the video. Downloads nothing."""
+        ...
+
+    def download(
+        self,
+        url: VideoUrl,
+        directory: Path,
+        *,
+        progress: Callable[[float, str], None] | None = None,
+        cancel: threading.Event | None = None,
+    ) -> Path:
+        """Download into ``directory`` (which must be empty and writable); return the file."""
         ...

@@ -10,7 +10,7 @@ import pytest
 from iftyedits.adapters.caption_render import render_cue, wrap_words
 from iftyedits.core.captions import CaptionCue, CueWord
 from iftyedits.core.models import JobStatus, Video
-from iftyedits.core.shorts import CaptionStyle, ShortConfig
+from iftyedits.core.shorts import CAPTION_PRESETS, CaptionStyle, ShortConfig
 from iftyedits.pipeline.jobs import RENDER_SHORT, JobQueue
 from iftyedits.services.ingest import IngestService
 from iftyedits.services.shorts import claim_unique_path, export_stem, slugify
@@ -185,3 +185,20 @@ def test_wrap_never_drops_words() -> None:
     words = ("alpha beta gamma delta epsilon " * 5).split()
     lines = wrap_words(words, _Metrics(40, True), 300)
     assert [w for line in lines for w in line] == words and len(lines) > 1
+
+
+@pytest.mark.parametrize("preset", sorted(CAPTION_PRESETS))
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Short.",
+        "Supercalifragilisticexpialidocious-pneumonoultramicroscopicsilicovolcanoconiosis",
+        "Wait, what?! Five million... really — no way: ñandú café 日本語 العربية 🙂",
+    ],
+)
+def test_every_preset_keeps_any_text_inside_the_mobile_safe_area(preset: str, text: str) -> None:
+    style = CaptionStyle.from_preset(preset)
+    image, layout = render_cue(_cue(text), style, (1080, 1920))
+    assert image.getbbox() is not None
+    assert layout.left >= 0 and layout.right <= 1080
+    assert layout.top >= 0.09 * 1920 and layout.bottom <= 0.81 * 1920

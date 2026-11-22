@@ -233,3 +233,15 @@ These change files or state; run them deliberately:
 - any `iftyedits` command except `--help` (opens or creates the database under `data/`;
   `import`, `enqueue`, `worker` and `reconcile` add data; `models download` writes model files
   under `models/`)
+
+## Phase 4 tests
+
+- `tests/unit/test_sources.py` (URL parsing, downloader, import), `test_worker_url.py`,
+  `test_production.py` (fake stages: selection, isolation, cancel, framing fallback),
+  `test_framing.py`, `test_preferences_theme.py`, `test_ui_phase4_pages.py` (URL form, Getting
+  started, Exports).
+- `tests/integration/test_production_ffmpeg.py` (`ffmpeg` marker): real FFmpeg renders from a
+  generated video with a fake downloader and fake speech; checks 1080x1920 output, separate
+  files, idempotent retry and cancel. No network is used and no real YouTube download is
+  tested in CI.
+

@@ -614,3 +614,44 @@ Next recommended task: owner review of the re-ranked clips, then Phase 3A (not s
 
 ### Next recommended task
 Phase 4 metadata (titles, descriptions, tags) or batch export.
+
+## Phase 4A — Link ingestion, one-click production, studio interface (2026-11-22)
+
+### Completed tasks
+- YouTube link ingestion: `core/sources.py` (URL parsing), `adapters/ytdlp.py` (subprocess,
+  timeouts, no cookies), `services/url_ingest.py`, `storage/video_urls.py` and migration `0007`
+  (`video_urls`), `IngestService.import_download`. Repeat links reuse the stored video.
+- `produce_video` and `fetch_url` jobs, `ProductionService` (idempotent stages, per-clip
+  isolation, serialised renders, cancel between steps), CLI `fetch` and `produce`.
+- Auto-framing (`core/framing.py`, `adapters/framing.py`): steady per-clip crop from image
+  detail, centre fallback, manual crops never overridden, "Auto-frame" button in the editor.
+- Caption presets `impact` and `studio` with safe-area tests.
+- Dark theme, `ui/theme.py`, Overview, Import (YouTube and local tabs), Getting started,
+  Exports pages; Jobs production summary; Library "Produce Shorts" button; dismissable welcome
+  (`services/preferences.py`).
+- Docs: D25, README, USER_GUIDE, TESTING, ROADMAP, `.env.example`.
+
+### Commands and results
+- `uv run ruff check .`: all checks passed. `uv run ruff format --check .`: 134 files formatted.
+  `uv run mypy`: no issues in 126 source files.
+- `IFTYEDITS_REQUIRE_FFMPEG=1 uv run pytest`: 732 passed, 1 skipped (opt-in real-model test),
+  after updating one stale expectation (`schema v6` to `schema v7`, migration 0007).
+- Browser (built-in, 1280x800): every page (Overview, Getting started, Import, Library,
+  Transcripts, Clips, Short editor, Exports, Jobs) loaded with no Streamlit exception; the
+  only console errors were 404s for Streamlit's own deep-link health probes.
+- Real media: `iftyedits produce 1 --clips 3 --captions impact` on the GTA 6 video through the
+  running worker: job succeeded, 3 of 3 Shorts; clip 1 reused the earlier export, two new files
+  in `data/exports/shorts/gta-6-gameplay-details-we-found-v1/` (24.5 s and 40.7 s), both h264
+  yuv420p 1080x1920 with AAC and a clean full decode. No orphan streamlit, worker or ffmpeg
+  processes after shutdown.
+- Not tested: a real YouTube download (no network test in CI, and no link was used).
+
+### Known limitations
+- Auto-framing is an image-detail heuristic, one position per clip; no face or speaker tracking.
+- No emphasis-word captions. Scoring was already componentised and was not changed.
+- Link downloads depend on yt-dlp and YouTube; restricted videos fail with a message.
+
+### Next recommended task
+SEO metadata (titles, descriptions, tags) and the safety review, then optional upload with
+explicit approval.
+

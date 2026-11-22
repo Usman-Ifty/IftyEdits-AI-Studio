@@ -27,7 +27,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from PIL import Image
+
 from iftyedits.adapters.ffmpeg import SOFTWARE_H264, FFmpeg
+from iftyedits.adapters.framing import column_interest
 from iftyedits.adapters.short_render import (
     CaptionAssets,
     EncodeChoice,
@@ -43,12 +46,14 @@ from iftyedits.core.captions import CaptionCue, build_cues
 from iftyedits.core.errors import (
     ClipNotFoundError,
     ExternalToolError,
+    IftyEditsError,
     InsufficientSpaceError,
     InvalidSourceError,
     JobCancelledError,
     ShortConfigError,
     ShortRenderError,
 )
+from iftyedits.core.framing import CropSuggestion, suggest_position
 from iftyedits.core.models import JobStatus, StoredSegment, Video
 from iftyedits.core.protocols import CancelToken, MediaProber, MediaTranscoder
 from iftyedits.core.shorts import ShortConfig, compute_crop
@@ -144,6 +149,11 @@ def export_stem(video: Video, config: ShortConfig, config_hash: str) -> str:
         f"{slugify(stem)}_v{video.id}_{_clock(config.start_s)}-{_clock(config.end_s)}"
         f"_{config_hash[:8]}"
     )
+
+
+def source_folder(video: Video) -> str:
+    """Per-source export folder name, so each video's Shorts stay together."""
+    return f"{slugify(Path(video.original_filename).stem)}-v{video.id}"
 
 
 def claim_unique_path(partial: Path, directory: Path, stem: str, suffix: str = ".mp4") -> Path:
@@ -335,6 +345,30 @@ class ShortService:
             partial.replace(target)
         return target
 
+    def suggest_crop(self, project_id: int, samples: int = 5) -> CropSuggestion:
+        """Where the vertical window should sit over this clip (never raises for bad frames).
+
+        Samples a few frames across the clip, judges each by visual detail and returns one
+        steady position. Falls back to the centre when frames cannot be read or nothing
+        stands out. The caller decides whether to apply it; nothing is saved here.
+        """
+        project = self.project(project_id)
+        config = project.config
+        info = self.source_info(project.video_id)
+        crop = compute_crop(info.width, info.height, 0.5)
+        if crop.width >= info.width - 2:
+            return CropSuggestion(0.5, "none", 0.0, "The picture is not wider than 9:16.")
+        step = config.duration_s / (samples + 1)
+        frames: list[list[float]] = []
+        for index in range(samples):
+            at = config.start_s + step * (index + 1)
+            try:
+                with Image.open(self.still(project.video_id, at)) as image:
+                    frames.append(column_interest(image))
+            except (IftyEditsError, OSError) as exc:
+                logger.info("Skipped a frame while framing: %s", exc)
+        return suggest_position(frames, crop.width / info.width)
+
     # ------------------------------------------------------------------ requests
 
     def sync_renders(self, project_id: int) -> None:
@@ -360,7 +394,9 @@ class ShortService:
         self.sync_renders(render.project_id)
         return True
 
-    def request_render(self, project_id: int, kind: str, *, force: bool = False) -> RenderRequest:
+    def request_render(
+        self, project_id: int, kind: str, *, force: bool = False, queue_job: bool = True
+    ) -> RenderRequest:
         """Queue a preview or export of the project's current settings.
 
         An identical request that is queued or running is reused (no duplicate work). An
@@ -390,6 +426,8 @@ class ShortService:
             if raced is None:
                 raise
             return RenderRequest(raced, False, "The same request is already running")
+        if not queue_job:
+            return RenderRequest(render, True)  # the caller runs it inline
         try:
             job_id, _ = self.queue.enqueue_short_render(render.id, project.video_id)
         except Exception as exc:
@@ -522,7 +560,9 @@ class ShortService:
                 partial.replace(final)
             else:
                 stem = export_stem(video, config, render.config_hash)
-                final = claim_unique_path(partial, directory.parent, stem)
+                folder = self._safe(directory.parent / source_folder(video))
+                folder.mkdir(parents=True, exist_ok=True)
+                final = claim_unique_path(partial, folder, stem)
             self._safe(final)
             self.shorts.mark_succeeded(
                 render.id,

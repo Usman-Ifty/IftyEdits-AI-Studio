@@ -12,6 +12,8 @@ CAPTION_PRESET_LABELS = {
     "boxed": "Boxed (white on dark box)",
     "highlight": "Highlight (active word colored)",
     "minimal": "Minimal (smaller, thin outline)",
+    "impact": "Impact (large, cyan active word)",
+    "studio": "Studio (soft box, violet active word)",
 }
 SIZE_LABELS = {
     "1080p": "1080 x 1920 (recommended)",

@@ -9,8 +9,9 @@ IftyEdits AI Studio will turn long-form videos into YouTube Shorts. This guide c
 - **Transcription** (Phase 1C): turn speech into text with timestamps, on this Mac, then read,
   search and export it as SRT, WebVTT, text or JSON.
 
-Clip finding, vertical reframing, captions, editing, export of Shorts and uploading are planned
-(see [ROADMAP.md](ROADMAP.md)) and are not available yet.
+Clip finding, Short editing and export, YouTube-link import and one-click production
+(Phases 2 to 4) also work and are described below. Uploading and metadata generation are
+planned (see [ROADMAP.md](ROADMAP.md)) and are not available yet.
 
 ## 1. Set up
 
@@ -74,7 +75,30 @@ The sidebar has five pages: Overview, Import, Library, Transcripts and Jobs.
 - **Storage**: where your data, the originals vault, generated files, exports, speech models
   and the database are.
 
-### Import
+### Getting started
+
+A short in-app walkthrough (sidebar: **Getting started**). It can be reopened any time; the
+welcome box on Overview has a **Hide this welcome** button that stays hidden.
+
+### Import: YouTube link (Phase 4)
+
+1. Open **Import**, tab **YouTube link**. Paste a watch, youtu.be or Shorts link. Playlists,
+   channels and live streams are refused.
+2. Tick **I have permission to use this video**. The app cannot know your rights; downloading
+   does not make reuse allowed, and it never uses logins, cookies or DRM workarounds. Private,
+   age-restricted, members-only or region-locked videos fail with a message; use a local file.
+3. Choose how many Shorts, the minimum score and a caption style.
+4. **Produce Shorts** runs the whole pipeline in one job. **Download only** just fetches and
+   imports the video. A link already downloaded is reused, not downloaded again.
+5. Follow it on **Jobs**; when finished, the per-clip summary shows status, length, size and
+   output path. **Exports** lists every finished MP4, grouped by source video.
+
+The same pipeline is available from the **Library** page (**Produce Shorts** per video) and
+the CLI (`iftyedits produce`). Each clip is its own file; one failing clip does not affect the
+others. Cancelling stops between steps and keeps files already exported. Clips are checked
+with ffprobe after rendering (1080x1920, H.264, audio when the source has audio).
+
+### Import: local file
 
 1. Type the full path of a video file or a folder on this Mac, for example
    `/Users/you/Movies/Episode 12.mp4`. There is no browser upload: large files are read from
@@ -331,8 +355,11 @@ Data folders (never committed to Git):
 
 ## 8. Current limitations
 
-- Shorts are exported locally; there is no uploading, metadata or batch export yet. HDR video
-  is not tone-mapped. Reframing is a fixed (adjustable) crop, with no face or speaker tracking.
+- There is no uploading or metadata generation yet. HDR video is not tone-mapped. Automatic
+  framing picks one steady crop per clip from image detail; it is not face or speaker tracking
+  and cannot follow movement inside a clip. Adjust the crop in the Short editor.
+- Link ingestion depends on yt-dlp and YouTube; if YouTube changes, update yt-dlp. Captions
+  have no emphasis words. Renders are made one at a time.
 - Clip scoring uses English wording cues (including boilerplate detection), transcript timings, loudness and scene changes.
   It does not analyse faces, speakers or tone of voice, and suggestions can be previewed and
   trimmed in the Short editor.

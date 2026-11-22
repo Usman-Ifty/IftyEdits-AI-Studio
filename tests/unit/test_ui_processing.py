@@ -33,7 +33,7 @@ from iftyedits.ui.formatting import (
     stage_cell,
     stage_row,
 )
-from tests.conftest import MakeMedia
+from tests.conftest import MakeMedia, path_input, scan_button
 
 APP = Path(__file__).resolve().parents[2] / "app"
 
@@ -233,8 +233,8 @@ def test_import_page_requests_preparation_by_default(
 ) -> None:
     clip = make_media("ep9.mp4")
     app = _run("import_videos.py")
-    app.text_input[0].set_value(str(clip))
-    app.button[0].click()
+    path_input(app).set_value(str(clip))
+    scan_button(app).click()
     app.run()
     prepare = next(c for c in app.checkbox if c.label.startswith("Prepare media"))
     assert prepare.value is True

@@ -14,7 +14,7 @@ from iftyedits.pipeline.jobs import JobQueue
 from iftyedits.services.ingest import IngestService
 from iftyedits.storage.db import open_database
 from iftyedits.ui.formatting import human_duration, human_size, job_row, resolution, stream_row
-from tests.conftest import MakeMedia
+from tests.conftest import MakeMedia, path_input, scan_button
 
 APP = Path(__file__).resolve().parents[2] / "app"
 
@@ -89,13 +89,13 @@ def test_job_row_shows_error_first() -> None:
 
 def test_overview_page_without_worker(app_env: None) -> None:
     app = _run("overview.py")
-    assert app.title[0].value == "IftyEdits AI Studio"
+    assert any("IftyEdits AI Studio" in m.value for m in app.markdown)
     assert any("No background worker" in w.value for w in app.warning)
 
 
 def test_library_page_empty(app_env: None) -> None:
     app = _run("library.py")
-    assert any("No videos imported yet" in i.value for i in app.info)
+    assert any("No videos yet" in i.value for i in app.info)
 
 
 def test_library_page_lists_imported_video(
@@ -113,8 +113,8 @@ def test_import_page_scans_folder_and_queues_without_importing(
     first = make_media("ep1.mp4")
     make_media("ep2.mov")
     app = _run("import_videos.py")
-    app.text_input[0].set_value(str(first.parent))
-    app.button[0].click()  # form submit: Scan
+    path_input(app).set_value(str(first.parent))
+    scan_button(app).click()  # form submit: Scan
     app.run()
     assert not app.exception
     queue_button = next(b for b in app.button if b.label.startswith("Queue 2"))
@@ -133,16 +133,16 @@ def test_import_page_scans_folder_and_queues_without_importing(
 
 def test_import_page_rejects_data_directory(app_env: None, settings: Settings) -> None:
     app = _run("import_videos.py")
-    app.text_input[0].set_value(str(settings.data_dir))
-    app.button[0].click()
+    path_input(app).set_value(str(settings.data_dir))
+    scan_button(app).click()
     app.run()
     assert any("data directory" in e.value for e in app.error)
 
 
 def test_import_page_reports_missing_path(app_env: None, tmp_path: Path) -> None:
     app = _run("import_videos.py")
-    app.text_input[0].set_value(str(tmp_path / "missing.mp4"))
-    app.button[0].click()
+    path_input(app).set_value(str(tmp_path / "missing.mp4"))
+    scan_button(app).click()
     app.run()
     assert any("not found" in e.value for e in app.error)
 
@@ -163,8 +163,8 @@ def test_import_page_lists_skipped_items(app_env: None, make_media: MakeMedia) -
     make_media("notes.txt")
     make_media("sub/b.mp4")
     app = _run("import_videos.py")
-    app.text_input[0].set_value(str(folder))
-    app.button[0].click()
+    path_input(app).set_value(str(folder))
+    scan_button(app).click()
     app.run()
     assert any("2 item(s) in this folder will not be imported" in w.value for w in app.warning)
     table = next(d.value for d in app.dataframe if "Reason" in d.value.columns)

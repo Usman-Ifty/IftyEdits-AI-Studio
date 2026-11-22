@@ -248,9 +248,18 @@ class OriginalsVault:
             raise InvalidSourceError(f"Source is not a regular file: {source}")
         if self.contains(resolved):
             raise OriginalProtectionError(f"Source is already inside the vault: {resolved}")
-        if is_within(resolved, self.staging_dir):
+        if is_within(resolved, self.staging_dir) and not self._is_url_download(resolved):
             raise OriginalProtectionError(f"Source is inside the staging area: {resolved}")
         return resolved
+
+    def _is_url_download(self, path: Path) -> bool:
+        """True for a file in a ``url-*`` folder of staging (a finished URL download).
+
+        Import partials live directly in staging, so this never matches one of them.
+        """
+        return path.parent.parent == self.staging_dir.resolve() and path.parent.name.startswith(
+            "url-"
+        )
 
     def _check_free_space(self, size: int) -> None:
         probe_dir = self.root if self.root.exists() else self.root.parent

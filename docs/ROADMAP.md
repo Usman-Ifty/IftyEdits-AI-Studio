@@ -412,6 +412,13 @@ recommendations, not predictions. Fixture-based regression tests cover scoring.
 
 ---
 
+# Phase 4A — Link ingestion and one-click production (implemented 2026-11-22)
+
+YouTube link ingestion (yt-dlp), `produce_video` job (fetch, prepare, transcribe, analyse,
+frame, caption, render, verify), detail-based auto-framing, two more caption presets, the
+redesigned dark interface, Getting started page and Exports page. Not done: face tracking,
+emphasis words, scoring changes. See D25.
+
 # Phase 4 — SEO and Publishing Metadata
 
 **Goal:** Generate useful YouTube metadata for each selected Short.

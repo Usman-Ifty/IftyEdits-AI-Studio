@@ -9,6 +9,7 @@ import streamlit as st
 from iftyedits.config import Settings
 from iftyedits.core.models import ALL_STAGES, ArtifactKind, CancelOutcome, StageStatus, Video
 from iftyedits.pipeline.jobs import ANALYZE_CLIPS, TRANSCRIBE_VIDEO, JobQueue
+from iftyedits.services.production import ProductionOptions
 from iftyedits.storage.clips import ClipRepository
 from iftyedits.storage.db import open_database
 from iftyedits.storage.originals import is_within
@@ -45,7 +46,10 @@ with closing(open_database(settings.db_path)) as conn:
     clip_jobs = JobQueue(conn).latest_by_video(ANALYZE_CLIPS)
 
 if not videos:
-    st.info("No videos imported yet. Use the Import page to add some.")
+    st.info(
+        "No videos yet. Open **Import** to paste a YouTube link or add a local file, "
+        "or **Getting started** for a short walkthrough."
+    )
     st.stop()
 
 st.dataframe(
@@ -149,6 +153,20 @@ def media_panel(video: Video) -> None:
             disabled=active is not None or not stages,
             help="Run every stage again even if its output is valid.",
         )
+        produce = st.button(
+            "Produce Shorts",
+            key=f"produce-{video.id}",
+            disabled=active is not None,
+            help="Prepare, transcribe, analyze and export the best clips as separate "
+            "1080x1920 MP4 files, in one job. Finished steps are reused.",
+        )
+        if produce:
+            options = ProductionOptions()
+            with closing(open_database(settings.db_path)) as conn:
+                job_id, created = JobQueue(conn).enqueue_production(
+                    options.as_payload(), video_id=video.id
+                )
+            st.success(f"Queued production job {job_id}. Follow it on the Jobs page.")
         if prepare or rebuild:
             with closing(open_database(settings.db_path)) as conn:
                 job_id, created = JobQueue(conn).enqueue_processing(

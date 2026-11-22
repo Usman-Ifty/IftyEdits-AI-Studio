@@ -89,12 +89,36 @@ CAPTION_PRESETS: dict[str, dict[str, Any]] = {
         "highlight_color": "#FFD400",
         "bold": False,
     },
+    "impact": {
+        "font_size": 84,
+        "text_color": "#FFFFFF",
+        "outline_color": "#000000",
+        "outline_px": 10,
+        "background": "none",
+        "highlight": True,
+        "highlight_color": "#00E5FF",
+        "bold": True,
+        "max_lines": 2,
+    },
+    "studio": {
+        "font_size": 56,
+        "text_color": "#FFFFFF",
+        "outline_color": "#000000",
+        "outline_px": 0,
+        "background": "box",
+        "background_opacity": 0.55,
+        "highlight": True,
+        "highlight_color": "#8B7CFF",
+        "bold": True,
+    },
 }
 PRESET_LABELS = {
     "classic": "Classic (white, black outline)",
     "boxed": "Boxed (white on dark box)",
     "highlight": "Karaoke (active word highlighted)",
     "minimal": "Minimal (smaller, thin outline)",
+    "impact": "Impact (large, cyan active word)",
+    "studio": "Studio (soft box, violet active word)",
 }
 
 

@@ -154,7 +154,7 @@ def test_export_is_verified_vertical_with_audio_for_every_source_shape(
     assert props["audio"] is True
     assert abs(float(props["duration"]) - 6.0) < 0.3  # type: ignore[arg-type]
     _decode(ffmpeg, out)
-    assert out.parent == settings.exports_dir / "shorts"
+    assert out.parent == settings.exports_dir / "shorts" / f"{Path(name).stem}-v1"
     assert out.suffix == ".mp4" and not out.name.startswith(".")
     row = service.shorts.list_renders(project)[0]
     assert row.status == "succeeded" and row.output_path == out and row.size_bytes
@@ -239,7 +239,7 @@ def test_stale_collision_gets_a_new_name(make_short: Setup, settings: Settings) 
     video = service.videos.get(service.project(project).video_id)
     assert video is not None
     stem = export_stem(video, service.project(project).config, request.render.config_hash)
-    squatter = settings.exports_dir / "shorts" / f"{stem}.mp4"
+    squatter = settings.exports_dir / "shorts" / "land-v1" / f"{stem}.mp4"
     squatter.parent.mkdir(parents=True, exist_ok=True)
     squatter.write_bytes(b"someone else's file")
     out = service.run_render(request.render.id).output_path
@@ -264,7 +264,7 @@ def test_failed_encode_leaves_no_partial_and_marks_the_row(
     row = service.shorts.get_render(request.render.id)
     assert row is not None and row.status == "failed" and row.error
     assert row.output_path is None
-    assert not list((settings.exports_dir / "shorts").glob("*.mp4"))
+    assert not list((settings.exports_dir / "shorts").rglob("*.mp4"))
     assert not list((settings.exports_dir / "shorts" / ".partial").glob("*"))
     retry = service.request_render(project, KIND_EXPORT)
     assert retry.created and retry.render.id != request.render.id
@@ -286,7 +286,7 @@ def test_verification_failure_is_not_recorded_as_success(
         service.run_render(request.render.id)
     row = service.shorts.get_render(request.render.id)
     assert row is not None and row.status == "failed"
-    assert not list((settings.exports_dir / "shorts").glob("*.mp4"))
+    assert not list((settings.exports_dir / "shorts").rglob("*.mp4"))
     assert not list((settings.exports_dir / "shorts" / ".partial").glob("*"))
 
 
@@ -297,7 +297,7 @@ def test_cancel_mid_render_cleans_up(make_short: Setup, settings: Settings) -> N
         service.run_render(request.render.id, cancel=_Cancelled())
     row = service.shorts.get_render(request.render.id)
     assert row is not None and row.status == "cancelled"
-    assert not list((settings.exports_dir / "shorts").glob("*.mp4"))
+    assert not list((settings.exports_dir / "shorts").rglob("*.mp4"))
 
 
 def test_out_of_range_request_is_rejected_before_queueing(make_short: Setup) -> None:

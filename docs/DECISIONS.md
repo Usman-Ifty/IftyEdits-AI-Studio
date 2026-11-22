@@ -393,3 +393,40 @@ changing the suggestion, the transcript or the original, and the installed FFmpe
 settings). Limits: single-pass loudnorm is approximate; HDR looks flat; the preview is a
 540x960 render of the same graph, not a live player; one worker runs one render at a time;
 no intelligent reframing, transitions or multi-clip timeline (future enhancements).
+
+## D25 — Phase 4: URL ingestion, one-job production, detail-based framing (2026-11-22)
+
+**Context:** Phase 4 asks for link ingestion, an automated link-to-Shorts pipeline, better
+reframing and captions, and a redesigned interface.
+**Decisions:**
+- *yt-dlp as a subprocess.* One new dependency (`yt-dlp`, locked). It is run through
+  `subprocess.run` with an argument list and timeouts by `adapters/ytdlp.py`; no cookies, no
+  login, no DRM or age-gate circumvention, no playlists, channels or live streams. Only
+  `youtube.com/watch`, `youtu.be` and Shorts links are accepted (`core/sources.py`). Limits:
+  `IFTYEDITS_URL_MAX_DURATION_S`, `_URL_DOWNLOAD_TIMEOUT_S`, `_URL_MAX_FILESIZE_MB`. The UI and
+  CLI state that a download is not permission to reuse a video. Downloads go to
+  `data/staging/` and are imported through the same vault path as local files
+  (`IngestService.import_download`); the link is recorded in `video_urls` (migration `0007`)
+  so a repeat link maps to the stored video and is never downloaded twice.
+- *One production job.* `produce_video` runs fetch, prepare, transcribe, analyse, then renders
+  each chosen clip one after another inside the same job. Every stage is idempotent and reuses
+  stored output; a failed clip is recorded and the others still export; cancel is checked
+  between steps. Renders are serialised on purpose (memory and encoder load on one Mac).
+  Exports go to `exports/shorts/<slug>-v<id>/` and existing files are never replaced.
+- *Clip scoring unchanged.* The Phase 2 scorer is already componentised (12 explained
+  components, `SCORING_VERSION = 2`, boundary and boilerplate logic with deterministic tests),
+  so no rewrite or version bump was made.
+- *Auto-framing without a model.* OpenCV 5.1 was tried and rejected: its wheel ships no Haar
+  cascades or models, so no face detector runs without a separate download. Framing instead
+  measures edge energy per column on a few sampled frames and picks one steady crop position
+  per clip (`core/framing.py`); flat or ambiguous footage keeps the centre. It is a detail
+  heuristic, not face or speaker tracking. A crop the user set by hand is never overridden, and
+  any failure falls back to the centre.
+- *Captions.* Two new presets (`impact`, `studio`) with safe-area tests; emphasis words are not
+  implemented.
+- *Interface.* Native Streamlit dark theme (`.streamlit/config.toml`) plus a small CSS and HTML
+  helper (`ui/theme.py`, no I/O). Onboarding choices (dismissed welcome) are a JSON file in the
+  data directory (`services/preferences.py`), not a table.
+**Consequences:** Link ingestion depends on yt-dlp keeping pace with YouTube; update it with
+`uv lock --upgrade-package yt-dlp`. Framing cannot follow a moving subject within a clip.
+

@@ -6,6 +6,7 @@ import os
 import sqlite3
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -102,3 +103,13 @@ def prober() -> FakeProber:
 def ingest(settings: Settings, db_conn: sqlite3.Connection, prober: FakeProber) -> IngestService:
     """Ingest service wired to temporary storage and the fake prober."""
     return IngestService(settings, VideoRepository(db_conn), prober, build_vault(settings))
+
+
+def path_input(app: Any) -> Any:
+    """The local-file path box on the Import page."""
+    return next(t for t in app.text_input if t.label == "File or folder path")
+
+
+def scan_button(app: Any) -> Any:
+    """The Scan button on the Import page."""
+    return next(b for b in app.button if b.label == "Scan")

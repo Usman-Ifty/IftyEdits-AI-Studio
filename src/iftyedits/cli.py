@@ -24,9 +24,12 @@ from iftyedits.core.clip_models import ClipCandidate, ClipDecision
 from iftyedits.core.errors import IftyEditsError
 from iftyedits.core.models import ALL_STAGES, CancelOutcome, ModelState, Stage
 from iftyedits.core.scoring import CATEGORY_LABELS, SCORING_VERSION
+from iftyedits.core.shorts import CAPTION_PRESETS
+from iftyedits.core.sources import PERMISSION_NOTICE, parse_video_url
 from iftyedits.pipeline.jobs import JobQueue
 from iftyedits.pipeline.worker import Worker
 from iftyedits.services.ingest import IngestService, build_vault, discover, validate_source
+from iftyedits.services.production import ProductionOptions
 from iftyedits.services.subtitles import EXPORT_FORMATS, export
 from iftyedits.services.transcription import options_from_settings, transcription_blocker
 from iftyedits.storage.clips import ClipRepository
@@ -175,6 +178,59 @@ def cmd_process(settings: Settings, args: argparse.Namespace) -> int:
             print(f"job {job_id:<5} {state:<15} #{video.id}  {video.original_filename}")
     if not videos:
         print("No videos imported yet.")
+    return EXIT_OK
+
+
+def cmd_fetch(settings: Settings, args: argparse.Namespace) -> int:
+    """Queue the download of a YouTube video you are allowed to use."""
+    try:
+        url = parse_video_url(args.url)
+    except IftyEditsError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+    print(PERMISSION_NOTICE, file=sys.stderr)
+    with closing(open_database(settings.db_path)) as conn:
+        job_id, created = JobQueue(conn).enqueue_url_fetch(url.canonical, process=args.process)
+    print(f"job {job_id}: {'queued' if created else 'already queued'}  {url.canonical}")
+    print("Run `iftyedits worker --once` to process the queue.")
+    return EXIT_OK
+
+
+def cmd_produce(settings: Settings, args: argparse.Namespace) -> int:
+    """Queue the whole pipeline (fetch, transcribe, analyse, render) for a link or a video."""
+    try:
+        options = ProductionOptions(
+            max_clips=args.clips,
+            min_score=args.min_score,
+            caption_preset=args.captions,
+            model=args.model,
+            language=args.language,
+            force=args.force,
+        ).validate()
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+    with closing(open_database(settings.db_path)) as conn:
+        queue = JobQueue(conn)
+        if "/" in args.source or "." in args.source:
+            try:
+                url = parse_video_url(args.source)
+            except IftyEditsError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return EXIT_USAGE
+            print(PERMISSION_NOTICE, file=sys.stderr)
+            job_id, created = queue.enqueue_production(options.as_payload(), url=url.canonical)
+            label = url.canonical
+        else:
+            try:
+                video = VideoRepository(conn).resolve_reference(args.source)
+            except IftyEditsError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return EXIT_USAGE
+            job_id, created = queue.enqueue_production(options.as_payload(), video_id=video.id)
+            label = f"#{video.id}  {video.original_filename}"
+    print(f"job {job_id}: {'queued' if created else 'already queued'}  {label}")
+    print("Run `iftyedits worker --once` to process the queue.")
     return EXIT_OK
 
 
@@ -701,6 +757,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="prepare media (audio, proxy, thumbnail) after each import",
     )
     p.set_defaults(func=cmd_enqueue)
+
+    p = sub.add_parser("fetch", help="queue the download of a YouTube video you may use")
+    p.add_argument("url", help="a youtube.com/watch, youtu.be or Shorts link")
+    p.add_argument("--process", action="store_true", help="prepare media after the download")
+    p.set_defaults(func=cmd_fetch)
+
+    p = sub.add_parser(
+        "produce", help="queue the full pipeline: a link or stored video in, Shorts out"
+    )
+    p.add_argument("source", help="a YouTube link, a video id or a SHA-256 prefix")
+    p.add_argument("--clips", type=int, default=5, help="most Shorts to make (default 5)")
+    p.add_argument("--min-score", type=float, default=40.0, help="skip weaker suggestions")
+    p.add_argument("--captions", choices=sorted(CAPTION_PRESETS), default="highlight")
+    p.add_argument("--model", help="speech model (default from settings)")
+    p.add_argument("--language", help="spoken language code (default: detect)")
+    p.add_argument("--force", action="store_true", help="redo stages even if stored")
+    p.set_defaults(func=cmd_produce)
 
     p = sub.add_parser("worker", help="run the background job worker")
     p.add_argument("--once", action="store_true", help="exit when the queue is empty")

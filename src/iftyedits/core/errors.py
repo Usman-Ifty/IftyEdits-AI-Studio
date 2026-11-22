@@ -104,3 +104,7 @@ class ShortConfigError(IftyEditsError):
 
 class ShortRenderError(IftyEditsError):
     """A Short could not be rendered or its output failed verification."""
+
+
+class SourceDownloadError(IftyEditsError):
+    """A video could not be fetched from a URL. The message says why and what to do."""

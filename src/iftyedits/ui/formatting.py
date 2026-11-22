@@ -113,6 +113,8 @@ def job_target(job: Job) -> str:
     """What a job works on: a file name for imports, a video id for processing."""
     if "path" in job.payload:
         return str(job.payload["path"]).rsplit("/", 1)[-1] or "-"
+    if "url" in job.payload:
+        return str(job.payload["url"]).removeprefix("https://www.")
     if job.video_id is not None:
         return f"video #{job.video_id}"
     if "model" in job.payload:
@@ -141,6 +143,9 @@ def job_outcome(job: Job) -> str:
         return "reused" if job.result.get("reused") else f"{segments} segments"
     if "state" in job.result:
         return str(job.result["state"])
+    if "clips" in job.result:
+        done, total = job.result.get("succeeded", 0), len(job.result["clips"])
+        return f"{done}/{total} Shorts"
     stages = job.result.get("stages")
     if isinstance(stages, dict) and stages:
         done = sum(1 for s in stages.values() if s in ("succeeded", "skipped"))
@@ -170,6 +175,8 @@ JOB_KIND_LABELS = {
     "analyze_clips": "analyse clips",
     "render_short": "render Short",
     "download_model": "download model",
+    "fetch_url": "download link",
+    "produce_video": "produce Shorts",
 }
 
 STAGE_LABELS = {Stage.AUDIO: "Audio", Stage.PROXY: "Proxy", Stage.THUMBNAIL: "Thumbnail"}

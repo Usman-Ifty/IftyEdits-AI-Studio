@@ -8,17 +8,17 @@ import streamlit as st
 
 from iftyedits.config import Settings
 from iftyedits.core.models import CancelOutcome, JobStatus
-from iftyedits.pipeline.jobs import JobQueue
+from iftyedits.pipeline.jobs import PRODUCE_VIDEO, JobQueue
 from iftyedits.storage.db import open_database
+from iftyedits.ui.exports import production_rows
 from iftyedits.ui.formatting import JOB_KIND_LABELS, job_row, job_status_label, job_target
 
 settings = Settings.from_env()
 
 st.title("Jobs")
 st.caption(
-    "Imports, media preparation, transcription and model downloads run in the "
-    "background worker. This page refreshes "
-    "every two seconds."
+    "Downloads, media preparation, transcription, analysis and Shorts production run in "
+    "the background worker. This page refreshes every two seconds."
 )
 
 CANCEL_TEXT = {
@@ -73,6 +73,10 @@ def job_board() -> None:
             )
         },
     )
+    productions = [j for j in finished if j.kind == PRODUCE_VIDEO and production_rows(j)]
+    for job in productions[:5]:
+        with st.expander(f"Production summary: job {job.id} ({job_target(job)})"):
+            st.dataframe(production_rows(job), hide_index=True, width="stretch")
     failed = [j for j in finished if j.status is JobStatus.FAILED and j.error]
     if failed:
         with st.expander(f"Errors ({len(failed)})"):
