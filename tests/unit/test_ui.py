@@ -89,7 +89,7 @@ def test_job_row_shows_error_first() -> None:
 
 def test_overview_page_without_worker(app_env: None) -> None:
     app = _run("overview.py")
-    assert any("IftyEdits AI Studio" in m.value for m in app.markdown)
+    assert any("Dashboard" in m.value for m in app.markdown)
     assert any("No background worker" in w.value for w in app.warning)
 
 

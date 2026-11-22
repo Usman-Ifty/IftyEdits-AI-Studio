@@ -16,6 +16,7 @@ from iftyedits.storage.originals import is_within
 from iftyedits.storage.processing import ProcessingRepository
 from iftyedits.storage.transcripts import TranscriptRepository
 from iftyedits.storage.videos import VideoRepository
+from iftyedits.ui import chrome
 from iftyedits.ui.formatting import (
     artifact_row,
     clips_cell,
@@ -32,7 +33,7 @@ from iftyedits.ui.formatting import (
 settings = Settings.from_env()
 DONE = (StageStatus.SUCCEEDED, StageStatus.SKIPPED)
 
-st.title("Library")
+chrome.heading("Library")
 
 with closing(open_database(settings.db_path)) as conn:
     repo = VideoRepository(conn)
@@ -47,10 +48,10 @@ with closing(open_database(settings.db_path)) as conn:
 
 if not videos:
     st.info(
-        "No videos yet. Open **Import** to paste a YouTube link or add a local file, "
-        "or **Getting started** for a short walkthrough."
+        "No videos yet. Open **Create Shorts** to paste a YouTube link or add a local file, "
+        "or **Guides & Help** for a short walkthrough."
     )
-    st.stop()
+    chrome.halt()
 
 st.dataframe(
     [
@@ -82,10 +83,10 @@ current_transcript = transcripts.get(video.id)
 if current_transcript is not None:
     st.caption(
         f"Transcript: {current_transcript.segment_count} segments with {current_transcript.model}. "
-        "Open the Transcripts page to read, search or export it."
+        "Open My Videos > Transcripts to read, search or export it."
     )
 else:
-    st.caption("No transcript yet. Open the Transcripts page to transcribe this video.")
+    st.caption("No transcript yet. Open My Videos > Transcripts to transcribe this video.")
 
 
 @st.fragment(run_every=2)
@@ -166,7 +167,7 @@ def media_panel(video: Video) -> None:
                 job_id, created = JobQueue(conn).enqueue_production(
                     options.as_payload(), video_id=video.id
                 )
-            st.success(f"Queued production job {job_id}. Follow it on the Jobs page.")
+            st.success(f"Queued production job {job_id}. Follow it on the Processing Queue page.")
         if prepare or rebuild:
             with closing(open_database(settings.db_path)) as conn:
                 job_id, created = JobQueue(conn).enqueue_processing(

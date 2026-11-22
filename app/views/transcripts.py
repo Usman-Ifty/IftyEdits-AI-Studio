@@ -18,6 +18,7 @@ from iftyedits.services.transcription import transcription_blocker
 from iftyedits.storage.db import open_database
 from iftyedits.storage.transcripts import TranscriptRepository
 from iftyedits.storage.videos import VideoRepository
+from iftyedits.ui import chrome
 from iftyedits.ui.formatting import (
     highlight_snippet,
     human_size,
@@ -37,7 +38,7 @@ AUTO = "Auto-detect"
 LANGUAGE_CHOICES = [AUTO, *sorted(f"{name} ({code})" for code, name in WHISPER_LANGUAGES.items())]
 UNCERTAIN_LANGUAGE = 0.6
 
-st.title("Transcripts")
+chrome.heading("Transcripts")
 st.caption(
     "Speech-to-text runs on this Mac in the background worker with faster-whisper. "
     "Audio never leaves the computer. Models are downloaded only when you ask."
@@ -170,8 +171,8 @@ with closing(open_database(settings.db_path)) as conn:
     }
 
 if not videos:
-    st.info("No videos imported yet. Use the Import page to add some.")
-    st.stop()
+    st.info("No videos imported yet. Open Create Shorts to add some.")
+    chrome.halt()
 
 labels = {f"#{v.id}  {v.original_filename}": v for v in videos}
 video = labels[st.selectbox("Video", list(labels), key="transcript-video")]

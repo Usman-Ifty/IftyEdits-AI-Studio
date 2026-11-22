@@ -15,6 +15,7 @@ from iftyedits.core.errors import IftyEditsError
 from iftyedits.core.sources import PERMISSION_NOTICE, parse_video_url
 from iftyedits.pipeline.jobs import JobQueue
 from iftyedits.services.ingest import discover, validate_source
+from iftyedits.services.journey import latest_progress
 from iftyedits.services.production import ProductionOptions
 from iftyedits.storage.db import open_database
 from iftyedits.ui import theme
@@ -26,11 +27,17 @@ SCAN_KEY = "import_scan"
 
 st.markdown(
     theme.hero(
-        "Import",
+        "Create Shorts",
         "Paste a YouTube link to produce Shorts in one go, or add a video file from this Mac.",
     ),
     unsafe_allow_html=True,
 )
+with closing(open_database(settings.db_path)) as _conn:
+    _flags, _name = latest_progress(_conn)
+st.markdown(
+    "**Your workflow**" + (f" · latest video: {_name}" if _name else ""),
+)
+st.markdown(theme.journey(_flags), unsafe_allow_html=True)
 
 tab_url, tab_file = st.tabs(["YouTube link", "Local file"])
 
@@ -58,7 +65,7 @@ with tab_url:
         )
         review = st.checkbox(
             "Review the picks before rendering",
-            help="Selects the best clips and stops. Check them on the Clips page, then "
+            help="Selects the best clips and stops. Check them in the Clip Editor, then "
             "produce again without this box.",
         )
         allowed = st.checkbox("I have permission to use this video")
@@ -86,7 +93,7 @@ with tab_url:
                     job_id, created = queue.enqueue_url_fetch(video_url.canonical, process=True)
             st.success(
                 f"Job {job_id} {'queued' if created else 'is already queued for this link'}. "
-                "Follow it on the Jobs page."
+                "Follow it on the Processing Queue page."
             )
         except (IftyEditsError, ValueError) as exc:
             st.error(str(exc))
@@ -164,13 +171,13 @@ def job_status() -> None:
         queue = JobQueue(conn)
         jobs = queue.list_recent(limit=50)
         workers = queue.live_workers()
-    st.subheader("Jobs")
+    st.subheader("Recent jobs")
     if not workers and any(j.status.value == "queued" for j in jobs):
         st.warning("Jobs are waiting but no worker is running. Start `uv run iftyedits worker`.")
     if not jobs:
         st.caption("No jobs yet.")
         return
-    st.caption("Cancel jobs and see processing errors on the Jobs page.")
+    st.caption("Cancel jobs and see processing errors on the Processing Queue page.")
     st.dataframe(
         [job_row(j) for j in jobs],
         hide_index=True,

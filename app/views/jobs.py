@@ -10,12 +10,13 @@ from iftyedits.config import Settings
 from iftyedits.core.models import CancelOutcome, JobStatus
 from iftyedits.pipeline.jobs import PRODUCE_VIDEO, JobQueue
 from iftyedits.storage.db import open_database
+from iftyedits.ui import chrome
 from iftyedits.ui.exports import production_rows
 from iftyedits.ui.formatting import JOB_KIND_LABELS, job_row, job_status_label, job_target
 
 settings = Settings.from_env()
 
-st.title("Jobs")
+chrome.heading("Processing Queue")
 st.caption(
     "Downloads, media preparation, transcription, analysis and Shorts production run in "
     "the background worker. This page refreshes every two seconds."
@@ -42,6 +43,21 @@ def job_board() -> None:
         st.success(f"Worker running: {', '.join(workers)}")
     elif active:
         st.warning("Jobs are waiting but no worker is running. Start `uv run iftyedits worker`.")
+
+    counts = {s: sum(1 for j in recent if j.status is s) for s in JobStatus}
+    cols = st.columns(5)
+    for col, (label, status) in zip(
+        cols,
+        [
+            ("Running", JobStatus.RUNNING),
+            ("Queued", JobStatus.QUEUED),
+            ("Completed", JobStatus.SUCCEEDED),
+            ("Failed", JobStatus.FAILED),
+            ("Cancelled", JobStatus.CANCELLED),
+        ],
+        strict=True,
+    ):
+        col.metric(label, counts.get(status, 0), help="Among the 100 most recent jobs")
 
     st.subheader("Active")
     if not active:

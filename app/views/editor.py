@@ -34,6 +34,7 @@ from iftyedits.storage.clips import ClipRepository
 from iftyedits.storage.db import open_database
 from iftyedits.storage.shorts import KIND_EXPORT, KIND_PREVIEW, ShortProject, ShortRepository
 from iftyedits.storage.videos import VideoRepository
+from iftyedits.ui import chrome
 from iftyedits.ui.clips import category_label, span_label
 from iftyedits.ui.formatting import human_size
 from iftyedits.ui.shorts import (
@@ -47,7 +48,7 @@ from iftyedits.ui.shorts import (
 
 settings = Settings.from_env()
 
-st.title("Short editor")
+chrome.heading("Edit Short")
 st.caption(
     "Trim a suggested moment, frame it for 9:16, check the captions, then preview and export an "
     "MP4. Everything runs on this computer. Your original video and the transcript are never "
@@ -82,9 +83,9 @@ with closing(open_database(settings.db_path)) as conn:
 if not videos:
     st.info(
         "No clip suggestions yet. Import a video, transcribe it, then press Find clips on the "
-        "Clips page."
+        "Clip Editor > Review candidates."
     )
-    st.stop()
+    chrome.halt()
 
 video_labels = {f"#{v.id}  {v.original_filename}": v for v in videos}
 target = st.session_state.pop("editor-target", None)
@@ -100,7 +101,7 @@ video = video_labels[st.selectbox("Video", list(video_labels), key="editor-video
 candidates = candidates_by_video[video.id]
 if not candidates:
     st.info("This video's analysis found no suggestions to edit.")
-    st.stop()
+    chrome.halt()
 clip_labels = {f"#{c.rank}  {c.title}": c for c in candidates}
 clip = clip_labels[st.selectbox("Suggested clip", list(clip_labels), key=f"editor-clip-{video.id}")]
 
@@ -111,7 +112,7 @@ try:
         info = service.source_info(video.id)
 except IftyEditsError as exc:
     st.error(str(exc))
-    st.stop()
+    chrome.halt()
 
 pid = project.id
 _show_flash()

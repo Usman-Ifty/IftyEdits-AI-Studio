@@ -15,6 +15,7 @@ from iftyedits.storage.clips import ClipRepository
 from iftyedits.storage.db import open_database
 from iftyedits.storage.transcripts import TranscriptRepository
 from iftyedits.storage.videos import VideoRepository
+from iftyedits.ui import chrome
 from iftyedits.ui.clips import (
     DECISION_FILTERS,
     SORT_OPTIONS,
@@ -38,7 +39,7 @@ from iftyedits.ui.formatting import job_status_label, utc_short
 
 settings = Settings.from_env()
 
-st.title("Clips")
+chrome.heading("Clips")
 st.caption(
     "Finds moments worth turning into Shorts from a video's transcript, loudness and scene "
     "changes. Scores are algorithmic recommendations with the evidence shown, not predictions "
@@ -103,8 +104,8 @@ with closing(open_database(settings.db_path)) as conn:
     analyses = ClipRepository(conn).current_by_video()
 
 if not videos:
-    st.info("No videos imported yet. Use the Import page to add some.")
-    st.stop()
+    st.info("No videos imported yet. Open Create Shorts to add some.")
+    chrome.halt()
 
 labels = {f"#{v.id}  {v.original_filename}": v for v in videos}
 video = labels[st.selectbox("Video", list(labels), key="clips-video")]
@@ -112,11 +113,11 @@ transcript = transcripts.get(video.id)
 
 _show_flash()
 if transcript is None:
-    st.warning("This video has no transcript yet. Transcribe it on the Transcripts page first.")
-    st.stop()
+    st.warning("This video has no transcript yet. Transcribe it in My Videos > Transcripts first.")
+    chrome.halt()
 if transcript.is_empty:
     st.warning("The transcript has no speech, so there is nothing to analyse.")
-    st.stop()
+    chrome.halt()
 
 analysis_status(video)
 with closing(open_database(settings.db_path)) as conn:
@@ -144,7 +145,7 @@ if left.button(
 
 if existing is None:
     st.info("No suggestions yet. Press Find clips; a background worker must be running.")
-    st.stop()
+    chrome.halt()
 analysis = existing
 with closing(open_database(settings.db_path)) as conn:
     repo = ClipRepository(conn)
@@ -163,7 +164,7 @@ if not candidates:
         "The analysis found no suitable moments. Very short or speech-free videos can do "
         "this. Try a video with more speech."
     )
-    st.stop()
+    chrome.halt()
 
 present = sorted({c.category for c in candidates})
 f1, f2, f3, f4 = st.columns(4)
@@ -195,7 +196,7 @@ shown = sort_candidates(
 st.caption(f"Showing {len(shown)} of {len(candidates)}.")
 if not shown:
     st.info("No suggestion matches these filters.")
-    st.stop()
+    chrome.halt()
 
 
 def _label(c: ClipCandidate) -> str:
@@ -284,8 +285,21 @@ with st.expander("Evidence signals"):
         st.caption("No signals fall inside this clip.")
     st.caption(f"Built by: {', '.join(picked.methods)}. Id {picked.key}.")
 
-if st.button("Edit as a Short", key=f"edit-{picked.id}", type="primary"):
-    st.session_state["editor-target"] = (video.id, picked.key)
+
+def _open_editor(video_id: int, clip_key: str) -> None:
+    st.session_state["editor-target"] = (video_id, clip_key)
+    st.session_state[chrome.SECTION_KEY] = chrome.EDITOR_SECTION
+
+
+if st.button(
+    "Edit as a Short",
+    key=f"edit-{picked.id}",
+    type="primary",
+    on_click=_open_editor if chrome.embedded() else None,
+    args=(video.id, picked.key) if chrome.embedded() else None,
+):
+    # standalone page (not inside the Clip Editor section): go to the editor page
+    _open_editor(video.id, picked.key)
     st.switch_page("views/editor.py")
 
 b1, b2, b3 = st.columns(3)

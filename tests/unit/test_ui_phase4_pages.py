@@ -84,7 +84,7 @@ def test_getting_started_page_renders_and_is_dismissable(app_env: None) -> None:
 
 def test_exports_page_empty_state(app_env: None) -> None:
     app = _run("exports.py")
-    assert any("No Shorts exported yet" in i.value for i in app.info)
+    assert any("No Shorts yet" in m.value for m in app.markdown)
 
 
 def test_production_rows_handle_missing_and_present_results() -> None:

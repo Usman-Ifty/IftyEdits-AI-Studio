@@ -1,4 +1,4 @@
-"""Overview: what is in the studio, what is running and what to do next."""
+"""Dashboard: what is in the studio, what is running and what to do next."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from streamlit.errors import StreamlitPageNotFoundError
 from iftyedits.config import Settings
 from iftyedits.core.models import ALL_STAGES, JobStatus, StageStatus
 from iftyedits.pipeline.jobs import PRODUCE_VIDEO, JobQueue
+from iftyedits.services.journey import latest_progress
 from iftyedits.services.preferences import Preferences
 from iftyedits.storage.clips import ClipRepository
 from iftyedits.storage.db import open_database
@@ -34,7 +35,7 @@ def link(page: str, label: str, icon: str, target: Any = st) -> None:
 
 st.markdown(
     theme.hero(
-        "IftyEdits AI Studio",
+        "Dashboard",
         "Paste a video link, get separate vertical Shorts with captions. "
         "Local-first: originals are stored read-only and never modified.",
     ),
@@ -59,17 +60,27 @@ productions = [
 ]
 made = sum(int((j.result or {}).get("succeeded", 0)) for j in productions)
 
+with closing(open_database(settings.db_path)) as _conn:
+    _flags, _name = latest_progress(_conn)
+st.markdown("**Workflow**" + (f" · latest video: {_name}" if _name else ""))
+st.markdown(theme.journey(_flags), unsafe_allow_html=True)
+qa, qb, qc, qd = st.columns(4)
+link("views/import_videos.py", "Create Shorts", ":material/add_circle:", qa)
+link("views/clip_editor.py", "Clip Editor", ":material/content_cut:", qb)
+link("views/exports.py", "Finished Shorts", ":material/movie:", qc)
+link("views/jobs.py", "Processing Queue", ":material/pending_actions:", qd)
+
 if not videos and not prefs.get("welcome_dismissed"):
     with st.container(border=True):
         st.markdown("#### New here?")
         st.write(
-            "Import a video, press **Produce Shorts**, and the studio does the rest. "
-            "The Getting started page explains each step."
+            "Open Create Shorts, press **Produce Shorts**, and the studio does the rest. "
+            "Guides & Help explains each step."
         )
         a, b = st.columns(2)
-        link("views/import_videos.py", "Import a video", "⬇️", a)
-        link("views/getting_started.py", "Read the guide", "🧭", b)
-        if st.button("Hide this welcome", help="You can always reopen Getting started."):
+        link("views/import_videos.py", "Create Shorts", ":material/add_circle:", a)
+        link("views/getting_started.py", "Read the guide", ":material/help:", b)
+        if st.button("Hide this welcome", help="You can always reopen Guides & Help."):
             prefs.set("welcome_dismissed", True)
             st.rerun()
 
@@ -90,9 +101,9 @@ else:
         "Start one with `uv run iftyedits worker`, or launch the app with `uv run iftyedits ui`."
     )
 if failed:
-    st.error(f"{failed} video(s) have a failed preparation stage. See the Library page.")
+    st.error(f"{failed} video(s) have a failed preparation stage. See My Videos.")
 elif videos and prepared < len(videos):
-    st.info(f"{len(videos) - prepared} video(s) still need media preparation (Library page).")
+    st.info(f"{len(videos) - prepared} video(s) still need media preparation (My Videos).")
 
 left, right = st.columns([3, 2], gap="large")
 with left:
@@ -111,9 +122,9 @@ with left:
             unsafe_allow_html=True,
         )
 with right:
-    st.subheader("Recent productions")
+    st.subheader("Recent exports")
     if not productions:
-        st.caption("Finished one-click productions appear here.")
+        st.caption("Finished Shorts appear here after a production.")
     for job in productions[:5]:
         result = job.result or {}
         ok, total = int(result.get("succeeded", 0)), len(result.get("clips", []))
@@ -126,7 +137,7 @@ with right:
             ),
             unsafe_allow_html=True,
         )
-    link("views/exports.py", "Open exports", "📦")
+    link("views/exports.py", "Open Finished Shorts", ":material/movie:")
 
 with st.expander("Where things are stored"):
     st.code(
