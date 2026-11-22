@@ -211,6 +211,7 @@ st.markdown("**Integrity**")
 st.code(
     f"SHA-256  {video.sha256}\nvault    {settings.originals_dir / video.vault_relpath}",
     language="text",
+    wrap_lines=True,
 )
 
 st.markdown("**Imported from**")

@@ -55,7 +55,19 @@ def best_window(columns: Sequence[float], window_frac: float) -> tuple[float, fl
         running += clean[index] - clean[index - window]
         sums.append(running)
     mean = sum(sums) / len(sums)
-    best = max(range(len(sums)), key=lambda i: (sums[i], -abs(i - (len(sums) - 1) / 2)))
+    top = max(sums)
+    # every window that holds the whole subject ties; take the middle of the tied run nearest
+    # the centre so a small subject sits mid-frame, not on the edge of the window
+    tied = [i for i, v in enumerate(sums) if v >= top - 1e-9 * max(1.0, abs(top))]
+    runs: list[list[int]] = [[tied[0]]]
+    for index in tied[1:]:
+        if index == runs[-1][-1] + 1:
+            runs[-1].append(index)
+        else:
+            runs.append([index])
+    centre = (len(sums) - 1) / 2
+    run = min(runs, key=lambda r: abs((r[0] + r[-1]) / 2 - centre))
+    best = run[(len(run) - 1) // 2]
     contrast = sums[best] / mean if mean > 0 else 1.0
     return best / (len(sums) - 1), contrast
 
@@ -94,6 +106,8 @@ CUT_JUMP = 0.35
 MIN_TRAVEL = 0.1
 """If the window would move less than this overall, one steady position is used instead."""
 MAX_KEYFRAMES = 24
+DWELL_READINGS = 2
+"""Consecutive readings on the same side of the dead zone before the window starts to move."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,6 +176,7 @@ def follow_subject(
     held = smooth[0]
     keys: list[tuple[float, float]] = [(0.0, round(held, 3))]
     last_t = 0.0
+    streak, last_side = 0, 0
     for obs, target in zip(usable, smooth, strict=True):
         t = min(max(obs.time_s, 0.0), duration_s)
         dt = max(0.0, t - last_t)
@@ -170,8 +185,14 @@ def follow_subject(
                 keys.append((round(max(last_t, t - 0.001), 3), round(held, 3)))
             held = target
         elif abs(target - held) > dead_zone:
-            step = max_speed * dt
-            held = held + max(-step, min(step, target - held))
+            side = 1 if target > held else -1
+            streak = streak + 1 if side == last_side else 1
+            last_side = side
+            if streak >= DWELL_READINGS:  # a lone or flip-flopping reading never moves it
+                step = max_speed * dt
+                held = held + max(-step, min(step, target - held))
+        else:
+            streak, last_side = 0, 0
         if t > last_t or keys[-1][1] != round(held, 3):
             keys.append((round(t, 3), round(held, 3)))
             last_t = max(last_t, t)

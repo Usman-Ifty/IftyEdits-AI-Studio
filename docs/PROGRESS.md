@@ -680,13 +680,21 @@ SEO metadata and the safety review, then optional upload with explicit approval.
 
 ## Phase 4C — Production QA and hardening (2026-11-22)
 
-Status: PARTIAL. Details and the media matrix are in [PHASE_4C_AUDIT.md](PHASE_4C_AUDIT.md).
+Status: ACCEPTED WITH A DOCUMENTED GAP (owner decision, 2026-11-22). Details are in [PHASE_4C_AUDIT.md](PHASE_4C_AUDIT.md).
 
-Done: false-success fix for all-failed production (P1), reply-opening boundary fix with
-`CANDIDATES_VERSION` 3, editor range truncation fix at phone width, two spoken fixtures run end
-to end and verified with ffprobe and a full decode, narrow-width browser check of Overview,
-Clips and Editor.
+Done: false-success fix (P1); reply-opening fix and `CANDIDATES_VERSION` 3; editor range fix;
+yt-dlp cancel watcher (P2); two-speaker window dwell rule (P2); tie-break centring; Library
+wrap fix; production reliability tests (cancel, kill, disk, concurrency, partial failure,
+recovery); caption matrix (8 transcripts x 10 presets); reframing matrix; synthetic media
+validation (noisy, Spanish, German, slides-like, sports-like); narrow-width audit of all nine
+pages; performance, log and error-handling reviews.
 
-Open: production-specific cancel/subprocess, disk-space and concurrency tests; the full
-reframing and caption matrices; performance measurements; log review; re-inspection of the
-remaining pages at narrow width. No real podcast, sports or multilingual media was tested.
+Gates: ruff, format and mypy clean. `IFTYEDITS_REQUIRE_FFMPEG=1 uv run pytest`: 1015 passed,
+1 skipped.
+
+Gap: Entertainment quality and real-world multilingual performance are not yet fully validated. All speech tests so far used synthetic voices (Spanish and German included) and generated video; no real podcast, sports, slides, noisy-recording or multilingual footage has been run. Clip suggestions are scored by explainable signals, not by how entertaining a clip is.
+Real-media validation is a mandatory pre-release requirement (Phase 9).
+Known limitation: fast sideways action can leave the 9:16 window.
+
+Next: Phase 5, UI/UX modernization.
+Never mark a phase COMPLETE until all its acceptance criteria are verified.

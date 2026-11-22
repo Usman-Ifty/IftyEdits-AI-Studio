@@ -474,3 +474,26 @@ A clip that starts on an answer to a question it omits is not understandable alo
 
 **Trade-offs.** The reply rule is a word-list heuristic (four words or fewer, English openers).
 Existing analyses are not rewritten; the version bump changes the parameter hash, so the next analysis stores a new one beside the old.
+
+## D28 — Phase 4C: cancel watcher and framing dwell (2026-11-22)
+
+**Decision.** yt-dlp downloads are stopped by a watcher thread that polls the cancel flag, not
+by a check on each output line. The moving crop starts to move only after two consecutive
+readings on the same side of the dead zone (`DWELL_READINGS`), and ties between equally good
+windows resolve to the middle of the tied run.
+
+**Why.** A stalled download prints nothing, so a per-line check never saw Cancel. Two people
+talking in turn produced alternating readings and the window swung between them.
+
+**Trade-offs.** The window reacts about one sample (about two seconds) later. Fast lateral
+action still outruns the pan; this is a limit of a detail heuristic, not a bug to hide.
+
+## D29 — Phase 4C accepted with a documented real-media gap (2026-11-22)
+
+**Decision.** Phase 4C is accepted for development without real podcast, sports, slides, noisy or
+multilingual footage. Real-media validation is mandatory before any release (Phase 9).
+
+**Why.** Downloads need per-file permission, and finishing the application matters more than
+repeating the same milestone. All automated gates pass.
+
+**Trade-offs.** Entertainment quality and real-world multilingual performance are unvalidated.

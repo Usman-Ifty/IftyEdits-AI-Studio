@@ -260,4 +260,10 @@ These change files or state; run them deliberately:
 - `tests/unit/test_worker_url.py`: a production where every clip fails is a failed job; partial
   success and "no eligible clip" stay successful.
 - `tests/unit/test_candidates.py`: clips do not open on a bare reply; `is_dangling_response`.
-- Manual media matrix and browser checks: see `docs/PHASE_4C_AUDIT.md`.
+- `tests/unit/test_production_reliability.py`: production cancel, stage failure, partial
+  success, interrupted-job recovery, repeated kills, atomic claim.
+- `tests/unit/test_ytdlp_subprocess.py`: a real subprocess killed on cancel and on timeout.
+- `tests/integration/test_shorts_ffmpeg.py`: low disk, disk full mid-encode, repeated export.
+- `tests/unit/test_caption_matrix.py`, `tests/unit/test_reframing_matrix.py`: the matrices.
+- Manual media matrix and browser checks: see `docs/PHASE_4C_AUDIT.md`. Media tests so far use
+  generated media. Real-media validation is a mandatory pre-release step, not yet done.

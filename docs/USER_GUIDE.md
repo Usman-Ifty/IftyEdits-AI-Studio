@@ -360,6 +360,10 @@ Data folders (never committed to Git):
 
 ## 8. Current limitations
 
+- Entertainment quality and real-world multilingual performance are not yet fully validated. All
+  speech tests so far used synthetic voices (Spanish and German included) and generated video;
+  no real podcast, sports, slides, noisy-recording or multilingual footage has been run. Clip
+  suggestions are scored by explainable signals, not by how entertaining a clip is.
 - There is no uploading or metadata generation yet. HDR video is not tone-mapped. Automatic
   framing follows image detail with a smooth moving crop; it is not face or speaker tracking.
   Adjust the crop in the Short editor.

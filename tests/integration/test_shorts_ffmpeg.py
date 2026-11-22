@@ -12,7 +12,12 @@ import pytest
 from iftyedits.adapters.ffmpeg import FFmpeg
 from iftyedits.adapters.ffprobe import FFprobe
 from iftyedits.config import Settings
-from iftyedits.core.errors import ExternalToolError, JobCancelledError, ShortConfigError
+from iftyedits.core.errors import (
+    ExternalToolError,
+    InsufficientSpaceError,
+    JobCancelledError,
+    ShortConfigError,
+)
 from iftyedits.core.models import JobStatus, Video
 from iftyedits.core.shorts import AudioSettings, PolishSettings, ShortConfig
 from iftyedits.pipeline.jobs import RENDER_SHORT, JobQueue
@@ -358,3 +363,57 @@ def test_suggest_path_returns_a_bounded_path_or_falls_back(make_short: Setup) ->
     assert all(0.0 <= p <= 1.0 for _, p in path.keyframes)
     portrait, pid = make_short("portrait.mp4")
     assert portrait.suggest_path(pid).method == "none"
+
+
+def test_low_disk_space_fails_cleanly_before_encoding(
+    make_short: Setup, settings: Settings
+) -> None:
+    service, project = make_short("land.mp4")
+    service.settings = settings.model_copy(update={"min_free_bytes": 10**18})
+    request = service.request_render(project, KIND_EXPORT)
+    with pytest.raises(InsufficientSpaceError, match="GB is free"):
+        service.run_render(request.render.id)
+    row = service.shorts.get_render(request.render.id)
+    assert row is not None and row.status == "failed" and "GB is free" in (row.error or "")
+    assert not list((settings.exports_dir / "shorts").rglob("*.mp4"))
+    assert not list((settings.exports_dir / "shorts" / ".partial").glob("*"))
+    service.settings = settings  # space is back: a retry works
+    retry = service.request_render(project, KIND_EXPORT)
+    assert retry.created and service.run_render(retry.render.id).output_path.is_file()
+
+
+def test_disk_full_during_encode_leaves_no_partial_and_a_readable_error(
+    make_short: Setup, settings: Settings
+) -> None:
+    service, project = make_short("land.mp4")
+
+    class DiskFull(FFmpeg):
+        def run(self, args, **kwargs):  # type: ignore[no-untyped-def]
+            partial = next(Path(a) for a in args if a.endswith(".partial"))
+            partial.write_bytes(b"x" * 100)
+            raise ExternalToolError(
+                "ffmpeg failed (exit 1): av_interleaved_write_frame(): No space left on device"
+            )
+
+    service.transcoder = lambda: DiskFull(settings.ffmpeg_path, 30, encoder="libx264")
+    request = service.request_render(project, KIND_EXPORT)
+    with pytest.raises(ExternalToolError):
+        service.run_render(request.render.id)
+    row = service.shorts.get_render(request.render.id)
+    assert row is not None and row.status == "failed" and "No space left" in (row.error or "")
+    assert not list((settings.exports_dir / "shorts" / ".partial").glob("*"))
+
+
+def test_repeated_export_reuses_the_finished_file(
+    make_short: Setup, settings: Settings, ffmpeg: str
+) -> None:
+    service, project = make_short("land.mp4")
+    first = service.request_render(project, KIND_EXPORT)
+    one = service.run_render(first.render.id).output_path
+    two = service.run_render(first.render.id).output_path  # finished: returned as is
+    assert one == two
+    again = service.request_render(project, KIND_EXPORT)
+    assert not again.created and again.render.id == first.render.id
+    files = list((settings.exports_dir / "shorts").rglob("*.mp4"))
+    assert files == [one]
+    _decode(ffmpeg, one)

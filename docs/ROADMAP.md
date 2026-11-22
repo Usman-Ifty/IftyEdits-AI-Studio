@@ -583,6 +583,9 @@ Require a human review and explicit approval before a clip can enter the publish
 - Add packaging/distribution only after local workflows are stable.
 - Document licensing implications of FFmpeg and model dependencies.
 - Create a release checklist.
+- Mandatory: run permitted real media (podcast, sports, slides, noisy, non-English) through the
+  pipeline and record the quality review in `docs/PHASE_4C_AUDIT.md`. Entertainment quality and
+  multilingual real-world performance are not yet validated.
 
 ### Phase 9 acceptance criteria
 - A new checkout can be installed using documented steps.
@@ -591,6 +594,7 @@ Require a human review and explicit approval before a clip can enter the publish
 - Known limitations are documented.
 - No critical placeholder controls remain.
 - Release process is reproducible.
+- Real-media validation (see Phase 9 tasks) is done and recorded.
 
 ---
 
@@ -632,6 +636,7 @@ For every phase, record:
 Never mark a phase COMPLETE until all its acceptance criteria are verified.
 
 
-# Phase 4C — Production QA (partially implemented 2026-11-22)
+# Phase 4C — Production QA (accepted 2026-11-22 with a documented real-media gap)
 
-See [PHASE_4C_AUDIT.md](PHASE_4C_AUDIT.md). Remaining items are listed in PROGRESS.md.
+See [PHASE_4C_AUDIT.md](PHASE_4C_AUDIT.md). Gap: validation on permitted real podcast, sports,
+slides, noisy and multilingual media is a mandatory Phase 9 pre-release item. Fast sideways action is a known framing limit.

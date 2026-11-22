@@ -167,6 +167,19 @@ class YtDlpDownloader:
             raise ExternalToolError(f"yt-dlp could not run: {exc}") from exc
         timer = threading.Timer(self.timeout_s, proc.kill)
         timer.start()
+        stop_watch = threading.Event()
+        cancelled = threading.Event()
+
+        def watch_cancel() -> None:
+            # A stalled download prints nothing, so cancel must not wait for the next line.
+            while not stop_watch.wait(0.2):
+                if cancel is not None and cancel.is_set():
+                    cancelled.set()
+                    proc.kill()
+                    return
+
+        watcher = threading.Thread(target=watch_cancel, daemon=True)
+        watcher.start()
         errors: list[str] = []
         collector = threading.Thread(
             target=lambda: errors.extend(proc.stderr.readlines()) if proc.stderr else None,
@@ -175,10 +188,8 @@ class YtDlpDownloader:
         collector.start()
         try:
             for line in proc.stdout or ():
-                if cancel is not None and cancel.is_set():
-                    proc.kill()
-                    proc.wait()
-                    raise JobCancelledError("Download cancelled")
+                if cancelled.is_set():
+                    break
                 if line.startswith(_PROGRESS_PREFIX) and progress is not None:
                     text = line[len(_PROGRESS_PREFIX) :].strip().rstrip("%")
                     try:
@@ -188,11 +199,15 @@ class YtDlpDownloader:
                     progress(fraction, f"Downloading {fraction:.0%}")
             code = proc.wait()
         finally:
+            stop_watch.set()
             timer.cancel()
             if proc.poll() is None:
                 proc.kill()
                 proc.wait()
             collector.join(timeout=5)
+            watcher.join(timeout=5)
+        if cancelled.is_set() or (cancel is not None and cancel.is_set()):
+            raise JobCancelledError("Download cancelled")
         if code != 0:
             raise SourceDownloadError(explain_failure("".join(errors)))
         files = sorted(
