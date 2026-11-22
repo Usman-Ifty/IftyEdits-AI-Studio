@@ -104,4 +104,28 @@ def clip_status(status: str) -> tuple[str, str]:
         "succeeded": ("Ready", "good"),
         "failed": ("Failed", "bad"),
         "skipped": ("Skipped", "warn"),
+        "selected": ("Selected", "good"),
     }.get(status, (status.capitalize(), "muted"))
+
+
+WORKFLOW = ("Import", "Prepare", "Transcribe", "Find clips", "Export")
+
+
+def workflow_tracker(done: tuple[bool, ...]) -> str:
+    """The five workflow steps as labels: finished ones ticked, the first open one marked next.
+
+    ``done`` holds one flag per step in :data:`WORKFLOW` order. A later step is never shown as
+    done before an earlier one (the flags are read left to right and stop at the first gap).
+    """
+    parts: list[str] = []
+    gap = False
+    for index, name in enumerate(WORKFLOW):
+        finished = index < len(done) and done[index] and not gap
+        if finished:
+            parts.append(pill(f"\u2713 {name}", "good"))
+        elif not gap:
+            parts.append(pill(f"Next: {name}", "warn"))
+            gap = True
+        else:
+            parts.append(pill(name, "muted"))
+    return " ".join(parts)

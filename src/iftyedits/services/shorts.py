@@ -30,7 +30,7 @@ from typing import Any
 from PIL import Image
 
 from iftyedits.adapters.ffmpeg import SOFTWARE_H264, FFmpeg
-from iftyedits.adapters.framing import column_interest
+from iftyedits.adapters.framing import column_interest, picture_change
 from iftyedits.adapters.short_render import (
     CaptionAssets,
     EncodeChoice,
@@ -53,7 +53,14 @@ from iftyedits.core.errors import (
     ShortConfigError,
     ShortRenderError,
 )
-from iftyedits.core.framing import CropSuggestion, suggest_position
+from iftyedits.core.framing import (
+    CropPath,
+    CropSuggestion,
+    FramingObservation,
+    best_window,
+    follow_subject,
+    suggest_position,
+)
 from iftyedits.core.models import JobStatus, StoredSegment, Video
 from iftyedits.core.protocols import CancelToken, MediaProber, MediaTranscoder
 from iftyedits.core.shorts import ShortConfig, compute_crop
@@ -77,6 +84,8 @@ TranscoderFactory = Callable[[], MediaTranscoder]
 SHORTS_DIR = "shorts"
 PREVIEW_SIZE = "540p"
 ENCODE_SHARE = 0.92
+CUT_CHANGE = 0.18
+MIN_PATH_WEIGHT = 0.05
 """Share of the progress bar used by the FFmpeg encode (the rest is checks and moving)."""
 
 
@@ -368,6 +377,39 @@ class ShortService:
             except (IftyEditsError, OSError) as exc:
                 logger.info("Skipped a frame while framing: %s", exc)
         return suggest_position(frames, crop.width / info.width)
+
+    def suggest_path(self, project_id: int, *, max_samples: int = 12) -> CropPath:
+        """A calm moving window for this clip: frames are sampled about every two seconds,
+        scene cuts are flagged, and :func:`follow_subject` smooths the result. Never raises
+        for unreadable frames; the result may be steady or centred. Nothing is saved here and
+        no face or identity is looked for or stored."""
+        project = self.project(project_id)
+        config = project.config
+        info = self.source_info(project.video_id)
+        crop = compute_crop(info.width, info.height, 0.5)
+        if crop.width >= info.width - 2:
+            return CropPath(((0.0, 0.5),), "none", 0.0, "The picture is not wider than 9:16.")
+        count = max(3, min(max_samples, round(config.duration_s / 2.0)))
+        step = config.duration_s / count
+        window = crop.width / info.width
+        found: list[FramingObservation] = []
+        previous: Image.Image | None = None
+        for index in range(count):
+            offset = step * (index + 0.5)
+            try:
+                with Image.open(self.still(project.video_id, config.start_s + offset)) as image:
+                    image.load()
+                    position, contrast = best_window(column_interest(image), window)
+                    cut = previous is not None and picture_change(previous, image) > CUT_CHANGE
+                    previous = image.copy()
+            except (IftyEditsError, OSError) as exc:
+                logger.info("Skipped a frame while framing: %s", exc)
+                continue
+            weight = max(0.0, min(1.0, (contrast - 1.0) / 2.0))
+            found.append(FramingObservation(offset, position, weight, cut))
+        if all(o.weight < MIN_PATH_WEIGHT for o in found):
+            return CropPath(((0.0, 0.5),), "center", 0.0, "Nothing stood out, so it is centred.")
+        return follow_subject(found, config.duration_s)
 
     # ------------------------------------------------------------------ requests
 

@@ -12,7 +12,7 @@ import pytest
 from iftyedits.adapters.short_render import VerifiedOutput
 from iftyedits.core.clip_models import ClipCandidate, ClipDecision, ClipSpan
 from iftyedits.core.errors import JobCancelledError, ShortRenderError
-from iftyedits.core.framing import CropSuggestion
+from iftyedits.core.framing import CropPath, CropSuggestion
 from iftyedits.core.shorts import ShortConfig
 from iftyedits.services.production import (
     ProductionOptions,
@@ -99,6 +99,11 @@ class FramingShorts(FakeShorts):
     def open_project(self, video_id: int, key: str) -> Any:
         config = ShortConfig(start_s=1.0, end_s=20.0, crop_position=self.start)
         return SimpleNamespace(id=int(key[3:]), config=config)
+
+    def suggest_path(self, project_id: int) -> Any:
+        if self.fail:
+            raise OSError("no frames")
+        return CropPath(((0.0, 0.8),), "steady", 0.7, "busy right side")
 
     def suggest_crop(self, project_id: int) -> Any:
         if self.fail:
@@ -226,3 +231,39 @@ def test_framing_failure_falls_back_and_still_exports() -> None:
     service, shorts = make([cand(1, 90)], FramingShorts(fail=True), [])
     report, _ = run(service, ProductionOptions(), url=None, video_id=7)
     assert report.succeeded == 1 and 0.8 not in _positions(shorts)
+
+
+def test_selection_skips_near_duplicates_and_out_of_range_lengths() -> None:
+    a = cand(1, 90)
+    twin = cand(2, 85)
+    object.__setattr__(twin, "start_s", a.start_s + 10)  # overlaps the first
+    object.__setattr__(twin, "end_s", a.end_s + 10)
+    short = cand(3, 80)
+    object.__setattr__(short, "end_s", short.start_s + 4)  # 4 s: below the minimum
+    long_ = cand(4, 75)
+    object.__setattr__(long_, "end_s", long_.start_s + 120)
+    fine = cand(5, 70)
+    picked = select_candidates([a, twin, short, long_, fine], ProductionOptions())
+    assert [c.rank for c in picked] == [1, 5]
+
+
+def test_weak_clips_are_never_added_to_reach_the_count() -> None:
+    picked = select_candidates(
+        [cand(1, 90), cand(2, 41), cand(3, 39), cand(4, 10)], ProductionOptions(max_clips=4)
+    )
+    assert [c.rank for c in picked] == [1, 2]
+
+
+def test_review_only_selects_without_rendering() -> None:
+    service, shorts = make([cand(1, 90), cand(2, 80)], FakeShorts(), [])
+    report, _ = run(service, ProductionOptions(review_only=True), url=None, video_id=7)
+    assert shorts.rendered == [] and [c.status for c in report.clips] == ["selected"] * 2
+    assert report.succeeded == 0 and "selected for review" in report.summary()
+    assert "nothing was rendered" in report.note
+
+
+def test_new_options_validate_and_roundtrip() -> None:
+    options = ProductionOptions(min_duration_s=12, max_duration_s=60, review_only=True)
+    assert ProductionOptions.from_payload(options.as_payload()) == options
+    with pytest.raises(ValueError):
+        ProductionOptions(min_duration_s=50, max_duration_s=20).validate()

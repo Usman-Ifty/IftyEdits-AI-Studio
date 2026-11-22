@@ -206,6 +206,9 @@ def cmd_produce(settings: Settings, args: argparse.Namespace) -> int:
             model=args.model,
             language=args.language,
             force=args.force,
+            min_duration_s=args.min_length,
+            max_duration_s=args.max_length,
+            review_only=args.review,
         ).validate()
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -772,6 +775,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--captions", choices=sorted(CAPTION_PRESETS), default="highlight")
     p.add_argument("--model", help="speech model (default from settings)")
     p.add_argument("--language", help="spoken language code (default: detect)")
+    p.add_argument("--min-length", type=float, default=10.0, help="shortest Short in seconds")
+    p.add_argument("--max-length", type=float, default=90.0, help="longest Short in seconds")
+    p.add_argument("--review", action="store_true", help="choose clips but do not render them")
     p.add_argument("--force", action="store_true", help="redo stages even if stored")
     p.set_defaults(func=cmd_produce)
 

@@ -13,6 +13,7 @@ import json
 import math
 import re
 from dataclasses import asdict, dataclass, field, replace
+from itertools import pairwise
 from typing import Any, Literal
 
 from iftyedits.core.errors import ShortConfigError
@@ -110,6 +111,59 @@ CAPTION_PRESETS: dict[str, dict[str, Any]] = {
         "highlight": True,
         "highlight_color": "#8B7CFF",
         "bold": True,
+    },
+    "clean": {
+        "font_size": 60,
+        "text_color": "#FFFFFF",
+        "outline_color": "#111111",
+        "outline_px": 4,
+        "background": "none",
+        "highlight": False,
+        "highlight_color": "#FFD400",
+        "bold": True,
+        "emphasis": True,
+        "emphasis_color": "#FFD400",
+        "position": 0.7,
+    },
+    "punchy": {
+        "font_size": 88,
+        "text_color": "#FFFFFF",
+        "outline_color": "#000000",
+        "outline_px": 11,
+        "background": "none",
+        "highlight": False,
+        "highlight_color": "#FFD400",
+        "bold": True,
+        "emphasis": True,
+        "emphasis_color": "#FF3D71",
+        "max_lines": 2,
+        "width_fraction": 0.8,
+    },
+    "cinematic": {
+        "font_size": 48,
+        "text_color": "#EDEDED",
+        "outline_color": "#000000",
+        "outline_px": 2,
+        "background": "none",
+        "highlight": False,
+        "highlight_color": "#FFD400",
+        "bold": False,
+        "emphasis": False,
+        "position": 0.76,
+        "width_fraction": 0.74,
+    },
+    "mobile": {
+        "font_size": 74,
+        "text_color": "#FFFFFF",
+        "outline_color": "#000000",
+        "outline_px": 0,
+        "background": "box",
+        "background_opacity": 0.85,
+        "highlight": False,
+        "highlight_color": "#FFD400",
+        "bold": True,
+        "emphasis": True,
+        "emphasis_color": "#FFE600",
     },
 }
 PRESET_LABELS = {
@@ -238,6 +292,9 @@ class CaptionStyle:
     highlight: bool = False
     highlight_color: str = "#FFD400"
     bold: bool = True
+    emphasis: bool = False
+    """Colour a few important words in each caption (chosen by a fixed rule, not at random)."""
+    emphasis_color: str = "#FFD400"
     align: Literal["left", "center", "right"] = "center"
     position: float = 0.68
     """Vertical centre of the caption block as a fraction of the frame height."""
@@ -247,7 +304,7 @@ class CaptionStyle:
 
     def validate(self) -> CaptionStyle:
         """Check ranges and return the style with the vertical position clamped."""
-        for name in ("text_color", "outline_color", "highlight_color"):
+        for name in ("text_color", "outline_color", "highlight_color", "emphasis_color"):
             if not HEX_COLOR.match(getattr(self, name)):
                 raise ShortConfigError(f"Caption {name.replace('_', ' ')} must look like #FFFFFF")
         if not 28 <= self.font_size <= 140:
@@ -351,6 +408,9 @@ class ShortConfig:
     start_s: float
     end_s: float
     crop_position: float = 0.5
+    crop_path: tuple[tuple[float, float], ...] = ()
+    """Optional moving window as ``(seconds from clip start, position)`` keyframes. Empty means
+    the steady ``crop_position``. Set by automatic framing; changing the crop by hand clears it."""
     captions: CaptionStyle = field(default_factory=CaptionStyle)
     text_overrides: dict[int, str] = field(default_factory=dict)
     """Corrected caption text by transcript segment position. The transcript is not changed."""
@@ -368,6 +428,7 @@ class ShortConfig:
         start, end = validate_range(self.start_s, self.end_s, source_duration_s)
         if not math.isfinite(self.crop_position):
             raise ShortConfigError("Crop position must be a number")
+        path = _clean_path(self.crop_path, end - start)
         for key, text in self.text_overrides.items():
             if key < 0:
                 raise ShortConfigError("Caption corrections refer to a transcript segment")
@@ -384,6 +445,7 @@ class ShortConfig:
             start_s=start,
             end_s=end,
             crop_position=_clamp(self.crop_position, 0.0, 1.0),
+            crop_path=path,
             captions=self.captions.validate(),
             audio=audio,
             polish=polish,
@@ -395,6 +457,14 @@ class ShortConfig:
         data = asdict(self)
         data["text_overrides"] = {str(k): v for k, v in sorted(self.text_overrides.items())}
         data["version"] = CONFIG_VERSION
+        captions = data["captions"]
+        if not captions.get("emphasis"):
+            captions.pop("emphasis", None)  # keeps the hash of settings made before emphasis
+            captions.pop("emphasis_color", None)
+        if self.crop_path:
+            data["crop_path"] = [[t, p] for t, p in self.crop_path]
+        else:
+            data.pop("crop_path", None)  # keeps the hash of every pre-existing setting
         return data
 
     def to_json(self) -> str:
@@ -409,6 +479,7 @@ class ShortConfig:
                 start_s=float(data["start_s"]),
                 end_s=float(data["end_s"]),
                 crop_position=float(data.get("crop_position", 0.5)),
+                crop_path=tuple((float(t), float(p)) for t, p in data.get("crop_path", ())),
                 captions=_build(CaptionStyle, data.get("captions")),
                 text_overrides={int(k): str(v) for k, v in data.get("text_overrides", {}).items()},
                 audio=_build(AudioSettings, data.get("audio")),
@@ -433,6 +504,41 @@ class ShortConfig:
         """Stable id of what a render would produce (source, settings, preview or export)."""
         text = f"{CONFIG_VERSION}|{kind}|{video_sha256}|{int(has_audio)}|{self.to_json()}"
         return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+MAX_PATH_KEYFRAMES = 32
+
+
+def _clean_path(
+    path: tuple[tuple[float, float], ...], duration_s: float
+) -> tuple[tuple[float, float], ...]:
+    """Validated moving-crop keyframes: finite, in range, strictly increasing in time."""
+    if len(path) > MAX_PATH_KEYFRAMES:
+        raise ShortConfigError("The moving crop has too many keyframes")
+    clean: list[tuple[float, float]] = []
+    for t, p in path:
+        if not (math.isfinite(t) and math.isfinite(p)):
+            raise ShortConfigError("Moving crop keyframes must be numbers")
+        t = _clamp(t, 0.0, max(duration_s, 0.0))
+        if clean and t <= clean[-1][0]:
+            raise ShortConfigError("Moving crop keyframes must go forward in time")
+        clean.append((round(t, 3), round(_clamp(p, 0.0, 1.0), 4)))
+    return tuple(clean)
+
+
+def crop_x_expression(crop: CropGeometry, path: tuple[tuple[float, float], ...]) -> str:
+    """FFmpeg ``x`` expression sliding the window along ``path`` (a number if it is steady)."""
+    span = (crop.source_w - crop.source_w % 2) - crop.width
+    if span <= 0 or not path:
+        return str(crop.x)
+    pts = [(t, round(p * span, 2)) for t, p in path]
+    expr = f"{pts[-1][1]:g}"
+    for (t0, x0), (t1, x1) in reversed(list(pairwise(pts))):
+        seg = f"{x0:g}" if t1 <= t0 else f"{x0:g}+({x1 - x0:g})*(t-{t0:g})/{t1 - t0:g}"
+        expr = f"if(lt(t,{t1:g}),{seg},{expr})"
+    if len(pts) > 1:
+        expr = f"if(lt(t,{pts[0][0]:g}),{pts[0][1]:g},{expr})"
+    return expr
 
 
 def _build(cls: Any, data: Any) -> Any:

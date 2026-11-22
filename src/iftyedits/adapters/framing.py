@@ -24,3 +24,14 @@ def column_interest(image: Image.Image) -> list[float]:
     columns = energy.sum(axis=0)
     columns = np.append(columns, columns[-1])  # restore the width lost to differencing
     return [float(v) for v in columns]
+
+
+def picture_change(a: Image.Image, b: Image.Image) -> float:
+    """How different two frames are, 0 (same) to 1 (opposite), on tiny grayscale copies.
+
+    Used only to tell a scene cut from ordinary movement. Deterministic, no model.
+    """
+    size = (32, 18)
+    x = np.asarray(a.convert("L").resize(size, Image.Resampling.BOX), dtype=np.float32)
+    y = np.asarray(b.convert("L").resize(size, Image.Resampling.BOX), dtype=np.float32)
+    return float(np.abs(x - y).mean() / 255.0)

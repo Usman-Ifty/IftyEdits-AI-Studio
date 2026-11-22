@@ -20,6 +20,7 @@ from typing import Literal
 
 from iftyedits.core.models import StoredSegment, TranscriptSegment, TranscriptWord
 from iftyedits.core.shorts import CaptionStyle
+from iftyedits.core.signals import STOPWORDS
 
 Timing = Literal["word", "segment", "estimated"]
 MIN_CUE_S = 0.2
@@ -230,3 +231,38 @@ def timing_summary(cues: Sequence[CaptionCue]) -> str:
     if counts["estimated"]:
         parts.append(f"{counts['estimated']} with estimated split points")
     return f"{len(cues)} captions: " + ", ".join(parts) + "."
+
+
+EMPHASIS_MIN_WORDS = 3
+EMPHASIS_MAX = 3
+EMPHASIS_MIN_SCORE = 6
+_EDGE = re.compile(r"^[\W_]+|[\W_]+$")
+
+
+def emphasis_indexes(words: Sequence[str]) -> frozenset[int]:
+    """Which words of a caption to colour. A fixed rule, so the same text always gives the
+    same answer: numbers, SHOUTED words and long content words rank highest, common words
+    never count, a caption of under three words gets none, and at most a quarter of the
+    words (never more than three) are picked, so the sentence keeps its shape."""
+    if len(words) < EMPHASIS_MIN_WORDS:
+        return frozenset()
+    scored: list[tuple[int, int]] = []
+    for index, raw in enumerate(words):
+        core = _EDGE.sub("", raw)
+        letters = [c for c in core if c.isalpha()]
+        if not core or core.lower() in STOPWORDS:
+            continue
+        score = len(core) if len(core) >= 4 else 0
+        if any(c.isdigit() for c in core):
+            score += 6
+        if len(letters) >= 3 and all(c.isupper() for c in letters):
+            score += 5
+        if index > 0 and core[0].isupper() and not core.isupper():
+            score += 2
+        if raw.rstrip("\"')]").endswith("!"):
+            score += 2
+        if score >= EMPHASIS_MIN_SCORE:
+            scored.append((score, index))
+    limit = min(EMPHASIS_MAX, max(1, len(words) // 4))
+    best = sorted(scored, key=lambda item: (-item[0], item[1]))[:limit]
+    return frozenset(index for _, index in best)

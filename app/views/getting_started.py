@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
+from contextlib import closing
+
 import streamlit as st
 
 from iftyedits.config import Settings
+from iftyedits.core.models import ALL_STAGES, JobStatus, StageStatus
 from iftyedits.core.shorts import MAX_CLIP_S, MIN_CLIP_S
 from iftyedits.core.sources import PERMISSION_NOTICE
+from iftyedits.pipeline.jobs import PRODUCE_VIDEO, JobQueue
+from iftyedits.storage.clips import ClipRepository
+from iftyedits.storage.db import open_database
+from iftyedits.storage.processing import ProcessingRepository
+from iftyedits.storage.transcripts import TranscriptRepository
+from iftyedits.storage.videos import VideoRepository
 from iftyedits.ui import theme
 
 settings = Settings.from_env()
@@ -19,6 +28,29 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+with closing(open_database(settings.db_path)) as conn:
+    latest = VideoRepository(conn).list_recent(limit=1)
+    if latest:
+        vid = latest[0].id
+        stages = ProcessingRepository(conn).stage_summary().get(vid, {})
+        ready = all(
+            stages.get(s) in (StageStatus.SUCCEEDED, StageStatus.SKIPPED) for s in ALL_STAGES
+        )
+        heard = vid in TranscriptRepository(conn).current_by_video()
+        found = vid in ClipRepository(conn).current_by_video()
+        exported = any(
+            j.kind == PRODUCE_VIDEO
+            and j.status is JobStatus.SUCCEEDED
+            and int((j.result or {}).get("succeeded", 0)) > 0
+            for j in JobQueue(conn).list_recent(limit=50)
+        )
+        progress = (True, ready, heard, found, exported)
+        name = latest[0].original_filename
+    else:
+        progress, name = (False,) * 5, ""
+st.markdown("**Your progress**" + (f" · latest video: {name}" if name else ""))
+st.markdown(theme.workflow_tracker(progress), unsafe_allow_html=True)
+
 st.subheader("The fast way")
 st.markdown(
     theme.steps(
@@ -30,6 +62,8 @@ st.markdown(
             "Open Exports to see every finished MP4 and where it is saved.",
             "Want to change one? Open it in the Short editor to trim, re-frame, "
             "change the captions and export again.",
+            "Prefer to choose the moments yourself? Tick Review the picks before rendering; "
+            "the studio lists what it would make and renders nothing until you run it again.",
         ]
     ),
     unsafe_allow_html=True,
@@ -61,10 +95,16 @@ with st.expander("3. Review clip suggestions"):
 with st.expander("4. Edit a Short"):
     st.markdown(
         f"Open a suggestion in the Short editor. Length must be {MIN_CLIP_S:.0f} to "
-        f"{MAX_CLIP_S:.0f} seconds. **Framing** has a crop slider and *Auto-frame*, "
-        "which moves the crop over the busiest part of the picture (it does not "
-        "recognise faces). **Captions** has presets, size, colours, position and "
-        "per-line text corrections. Make a quick preview before the full export."
+        f"{MAX_CLIP_S:.0f} seconds. **Framing** has a crop slider and *Auto-frame*. "
+        "Auto-frame looks at frames across the clip, picks the busiest part of the picture "
+        "and, if it shifts, pans slowly with it (no jumps, a hard cut may reposition at "
+        "once). It does not recognise faces or people, so check the crop guide. "
+        "The mode shown above the slider tells you whether the crop is *Auto-follow* or "
+        "*Manual*: moving the slider or the trim by hand switches to manual, and automatic "
+        "production never overrides a crop you set. **Captions** has presets (Clean creator, "
+        "Bold punchy, Cinematic, High contrast mobile and more), size, colours, position, "
+        "optional key-word colouring and per-line text corrections. Make a quick preview "
+        "before the full export."
     )
 with st.expander("5. Export and find your files"):
     st.markdown(
@@ -72,6 +112,26 @@ with st.expander("5. Export and find your files"):
         "Existing files are never overwritten; a new version gets a new name."
     )
     st.code(f"{settings.exports_dir}/shorts/<video-name>-v<id>/", language="text")
+
+with st.expander("What the scores mean"):
+    st.markdown(
+        "Each suggestion gets 0 to 100 from thirteen parts: hook, completeness, context, "
+        "payoff, pacing, speech clarity, content density, emotion, energy and others. "
+        "**75+ strong, 55+ promising, 35+ mixed, below weak.** The score says how well a "
+        "moment stands alone; it cannot predict views, and it does not judge rights or "
+        "platform rules. Open a suggestion on the Clips page to see every part, the "
+        "strengths and the weaknesses."
+    )
+with st.expander("When something fails"):
+    st.markdown(
+        "- A failed Short does not stop the others; the Jobs page shows which ones failed "
+        "and why in plain words.\n"
+        "- Press **Retry** on a failed or cancelled job. Finished stages are reused, so only "
+        "the missing work runs.\n"
+        "- If the app or the worker was closed mid-job, start it again: interrupted jobs are "
+        "recovered and no original is ever changed.\n"
+        "- Exports are never overwritten; a repeat export gets a new file name."
+    )
 
 st.subheader("Good to know")
 st.markdown(

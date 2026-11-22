@@ -77,6 +77,25 @@ def job_board() -> None:
     for job in productions[:5]:
         with st.expander(f"Production summary: job {job.id} ({job_target(job)})"):
             st.dataframe(production_rows(job), hide_index=True, width="stretch")
+    retryable = [
+        j
+        for j in finished
+        if j.kind == PRODUCE_VIDEO
+        and j.status in (JobStatus.FAILED, JobStatus.CANCELLED)
+        and ("url" in j.payload or "video_id" in j.payload)
+    ]
+    for job in retryable[:3]:
+        label = "failed" if job.status is JobStatus.FAILED else "was cancelled"
+        a, b = st.columns([4, 1])
+        a.caption(f"Production job {job.id} ({job_target(job)}) {label}. Finished work is reused.")
+        if b.button("Retry", key=f"retry-job-{job.id}", help="Runs the same production again."):
+            with closing(open_database(settings.db_path)) as conn:
+                _, created = JobQueue(conn).enqueue_production(
+                    dict(job.payload.get("options", {})),
+                    url=job.payload.get("url"),
+                    video_id=job.payload.get("video_id"),
+                )
+            st.info("Queued again." if created else "That production is already running.")
     failed = [j for j in finished if j.status is JobStatus.FAILED and j.error]
     if failed:
         with st.expander(f"Errors ({len(failed)})"):

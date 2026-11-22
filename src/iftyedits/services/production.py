@@ -38,6 +38,7 @@ STAGE_SHARES: tuple[tuple[str, float], ...] = (
 STATUS_SUCCEEDED = "succeeded"
 STATUS_FAILED = "failed"
 STATUS_SKIPPED = "skipped"
+STATUS_SELECTED = "selected"
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +51,12 @@ class ProductionOptions:
     model: str | None = None
     language: str | None = None
     force: bool = False
+    min_duration_s: float = 10.0
+    max_duration_s: float = 90.0
+    min_gap_s: float = 5.0
+    """Selected Shorts must be at least this far apart (no near-identical moments)."""
+    review_only: bool = False
+    """Choose the clips and stop before rendering, so they can be reviewed first."""
 
     def validate(self) -> ProductionOptions:
         """Raise ``ValueError`` for settings that cannot work."""
@@ -57,6 +64,10 @@ class ProductionOptions:
             raise ValueError("Choose between 1 and 50 clips")
         if not 0 <= self.min_score <= 100:
             raise ValueError("The minimum score must be between 0 and 100")
+        if not 0 < self.min_duration_s <= self.max_duration_s <= 180:
+            raise ValueError("Clip length limits must satisfy 0 < min <= max <= 180 seconds")
+        if self.min_gap_s < 0:
+            raise ValueError("The gap between Shorts cannot be negative")
         if self.caption_preset not in CAPTION_PRESETS:
             raise ValueError(f"Unknown caption preset {self.caption_preset!r}")
         return self
@@ -70,6 +81,10 @@ class ProductionOptions:
             "model": self.model,
             "language": self.language,
             "force": self.force,
+            "min_duration_s": self.min_duration_s,
+            "max_duration_s": self.max_duration_s,
+            "min_gap_s": self.min_gap_s,
+            "review_only": self.review_only,
         }
 
     @classmethod
@@ -164,6 +179,8 @@ class ProductionReport:
         """One line for the jobs list."""
         if not self.clips:
             return self.note or "No clip suggestions met the settings"
+        if self.clips and all(c.status == STATUS_SELECTED for c in self.clips):
+            return f"{len(self.clips)} Short(s) selected for review"
         text = f"{self.succeeded} of {len(self.clips)} Shorts exported"
         return f"{text}, {self.failed} failed" if self.failed else text
 
@@ -173,16 +190,34 @@ def select_candidates(
 ) -> list[ClipCandidate]:
     """The suggestions to render: best first, never rejected ones, favourites before the rest.
 
-    The analysis already limits overlap between suggestions, so picking in order cannot
-    produce near-duplicate Shorts.
+    Policy: skip rejected suggestions, scores below ``min_score`` and lengths outside the
+    duration limits; take favourites first, then by rank; skip a suggestion that overlaps an
+    already chosen one or starts within ``min_gap_s`` of it, so two Shorts never show the same
+    moment. Fewer than ``max_clips`` is normal: weak clips are never added to fill the count.
     """
     usable = [
         c
         for c in candidates
-        if c.decision is not ClipDecision.REJECTED and c.score >= options.min_score
+        if c.decision is not ClipDecision.REJECTED
+        and c.score >= options.min_score
+        and options.min_duration_s
+        <= c.effective_end_s - c.effective_start_s
+        <= options.max_duration_s
     ]
     usable.sort(key=lambda c: (c.decision is not ClipDecision.FAVORITE, c.rank))
-    return usable[: options.max_clips]
+    chosen: list[ClipCandidate] = []
+    for candidate in usable:
+        if len(chosen) >= options.max_clips:
+            break
+        lo, hi = candidate.effective_start_s, candidate.effective_end_s
+        if any(
+            lo < c.effective_end_s + options.min_gap_s
+            and c.effective_start_s < hi + options.min_gap_s
+            for c in chosen
+        ):
+            continue
+        chosen.append(candidate)
+    return chosen
 
 
 class ProductionService:
@@ -254,6 +289,19 @@ class ProductionService:
                 "Lower the minimum score or review the suggestions on the Clips page."
             )  # fmt: skip
             return ProductionReport(video_id, (), len(found), note)
+        if options.review_only:
+            picked = tuple(
+                ClipOutcome(
+                    c.rank, c.key, c.title, c.score, c.effective_start_s, c.effective_end_s,
+                    STATUS_SELECTED,
+                )
+                for c in chosen
+            )  # fmt: skip
+            return ProductionReport(
+                video_id, picked, len(found),
+                "Review only: nothing was rendered. Open the Clips page, then run again "
+                "without review.",
+            )  # fmt: skip
         render = stage("render")
         outcomes: list[ClipOutcome] = []
         for index, candidate in enumerate(chosen):
@@ -270,13 +318,29 @@ class ProductionService:
         return ProductionReport(video_id, tuple(outcomes), len(found))
 
     def _frame(self, project_id: int, config: ShortConfig) -> None:
-        """Pick a crop position for a Short whose framing was never touched.
+        """Choose automatic framing for a Short whose framing was never touched.
 
-        A position the user set (anything but the default centre) is left alone. A failure
-        here never stops the export: the centre crop is used.
+        A crop the user set (a position other than the default centre, or a stored moving
+        path) is left alone. Order: a smooth moving window, then one steady window from the
+        detail heuristic, then the centre. A failure never stops the export.
         """
-        if config.crop_position != 0.5:
+        if config.crop_position != 0.5 or config.crop_path:
             return
+        try:
+            path = self.shorts.suggest_path(project_id)
+            if path.method == "follow":
+                self.shorts.save_config(
+                    project_id,
+                    replace(config, crop_position=path.keyframes[0][1], crop_path=path.keyframes),
+                )
+                return
+            if path.method == "steady":
+                self.shorts.save_config(
+                    project_id, replace(config, crop_position=path.keyframes[0][1])
+                )
+                return
+        except Exception as exc:
+            logger.info("Moving framing skipped: %s", exc)
         try:
             suggestion = self.shorts.suggest_crop(project_id)
             if suggestion.method == "detail":

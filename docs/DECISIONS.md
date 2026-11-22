@@ -430,3 +430,34 @@ reframing and captions, and a redesigned interface.
 **Consequences:** Link ingestion depends on yt-dlp keeping pace with YouTube; update it with
 `uv lock --upgrade-package yt-dlp`. Framing cannot follow a moving subject within a clip.
 
+## D26 — Phase 4B: density scoring, moving crop, caption emphasis, selection policy (2026-11-22)
+
+**Decision.** Supersedes the framing and caption limits stated in D25.
+- *Scoring v3.* A `density` component (informative words per second, boilerplate excluded) joins
+  the existing hook, completeness, context, payoff, pacing, clarity and engagement components.
+  `SCORING_VERSION` is 3, so stored analyses re-run when the user asks. Strengths, weaknesses and a
+  plain reason are kept per candidate; scores are explanations, not predictions.
+- *Selection policy.* Production picks by score, favours the user's favourites, skips rejected
+  clips, near-duplicates (overlap or less than `min_gap_s` apart) and lengths outside
+  `min_duration_s`..`max_duration_s`, and never pads to reach the count. `--review` (or the
+  "Review the picks" box) selects and reports without rendering.
+- *Moving crop without a face model.* Evaluated: `cv2` is not installed; `onnxruntime` and numpy
+  arrive as transitive dependencies but no face model ships with them, and a detector's output
+  layout cannot be verified offline without the model and a face image. No face detector is
+  therefore shipped. Instead `core/framing.follow_subject` turns per-sample detail readings into a
+  smoothed path (median of 3, dead zone 0.08, speed limit 0.12 per second, instant jump only at
+  a detected scene cut, steady fallback when travel is under 0.1, none when readings are weak).
+  The path is stored as `ShortConfig.crop_path` (at most 32 keyframes) and rendered by an FFmpeg
+  `crop` filter whose `x` is a piecewise-linear expression in `t`; a frame at 5.5 s matched a
+  static crop at the end position. It follows the busiest part of the picture, not faces or
+  speakers. No identity or embedding is stored. A manual crop value or an edited trim drops the
+  path, and production never replaces a non-default crop.
+- *Caption emphasis.* A deterministic rule (`core/captions.emphasis_indexes`) marks at most a few
+  long, numeric, all-caps or exclaimed content words per cue; stop words are never marked.
+  Presets `clean`, `punchy`, `cinematic` and `mobile` were added. Config hashes of existing Shorts
+  are unchanged because the new keys are omitted when unused.
+- *URL ingestion tested for real* on a Creative Commons video (Blender's Big Buck Bunny): metadata
+  and a 135 MB download through `YtDlpDownloader` worked without credentials.
+
+**Consequences.** Without a detector the crop cannot keep a person in frame; adding one later
+means a new reading source for `follow_subject`, not a new render path.

@@ -15,6 +15,7 @@ import math
 import statistics
 from collections.abc import Sequence
 from dataclasses import dataclass
+from itertools import pairwise
 
 CENTER = 0.5
 MIN_CONTRAST = 1.25
@@ -80,3 +81,142 @@ def suggest_position(
         else "The busy area moves around, so this is a compromise; check the crop guide."
     )
     return CropSuggestion(round(position, 3), "detail", round(confidence, 2), note)
+
+
+# ---------------------------------------------------------------------- following a subject
+
+DEAD_ZONE = 0.08
+"""Subject drift (as a share of the sideways travel) that is ignored; the window stays put."""
+MAX_SPEED = 0.12
+"""Fastest window movement, in share of the travel per second (a slow, steady pan)."""
+CUT_JUMP = 0.35
+"""A jump this large between two samples, with a cut flagged, moves the window instantly."""
+MIN_TRAVEL = 0.1
+"""If the window would move less than this overall, one steady position is used instead."""
+MAX_KEYFRAMES = 24
+
+
+@dataclass(frozen=True, slots=True)
+class FramingObservation:
+    """Where the subject was at one sampled moment (seconds from the clip start)."""
+
+    time_s: float
+    position: float
+    """Window position (0..1) that centres the subject at this moment."""
+    weight: float = 1.0
+    """Trust in this reading (0 = none). Weak readings are ignored."""
+    cut: bool = False
+    """True when the picture changed completely since the previous sample (a scene cut)."""
+
+
+@dataclass(frozen=True, slots=True)
+class CropPath:
+    """A smooth window path as ``(seconds from clip start, position)`` keyframes."""
+
+    keyframes: tuple[tuple[float, float], ...]
+    method: str
+    """``"follow"`` (moves), ``"steady"`` (one position), ``"center"`` or ``"none"``."""
+    confidence: float
+    note: str
+
+    @property
+    def moves(self) -> bool:
+        """True when the window changes position during the clip."""
+        return len({round(p, 3) for _, p in self.keyframes}) > 1
+
+
+def follow_subject(
+    observations: Sequence[FramingObservation],
+    duration_s: float,
+    *,
+    dead_zone: float = DEAD_ZONE,
+    max_speed: float = MAX_SPEED,
+    min_weight: float = 0.05,
+) -> CropPath:
+    """Turn noisy per-moment subject positions into a calm window path.
+
+    Rules: readings are smoothed with a median of three; the window holds still while the
+    subject stays inside the dead zone; when it leaves, the window moves toward it at no
+    more than ``max_speed`` (so there are no jumps), except across a scene cut where it may
+    jump at once; if the path would barely move, one steady position is returned. Fewer than
+    two usable readings return the centre. The path is deterministic.
+    """
+    usable = sorted(
+        (
+            o
+            for o in observations
+            if math.isfinite(o.time_s) and math.isfinite(o.position) and o.weight >= min_weight
+        ),
+        key=lambda o: o.time_s,
+    )
+    if duration_s <= 0 or len(usable) < MIN_SAMPLES:
+        return CropPath(((0.0, CENTER),), "none", 0.0, "Too few readings; centred.")
+    raw = [min(1.0, max(0.0, o.position)) for o in usable]
+    smooth = list(raw)
+    for i in range(len(raw)):
+        if usable[i].cut:
+            continue
+        lo = i - 1 if i > 0 and not usable[i].cut else i
+        hi = i + 1 if i + 1 < len(raw) and not usable[i + 1].cut else i
+        smooth[i] = statistics.median(raw[lo : hi + 1])
+    held = smooth[0]
+    keys: list[tuple[float, float]] = [(0.0, round(held, 3))]
+    last_t = 0.0
+    for obs, target in zip(usable, smooth, strict=True):
+        t = min(max(obs.time_s, 0.0), duration_s)
+        dt = max(0.0, t - last_t)
+        if obs.cut and abs(target - held) >= CUT_JUMP:
+            if t > last_t:
+                keys.append((round(max(last_t, t - 0.001), 3), round(held, 3)))
+            held = target
+        elif abs(target - held) > dead_zone:
+            step = max_speed * dt
+            held = held + max(-step, min(step, target - held))
+        if t > last_t or keys[-1][1] != round(held, 3):
+            keys.append((round(t, 3), round(held, 3)))
+            last_t = max(last_t, t)
+    if last_t < duration_s:
+        keys.append((round(duration_s, 3), round(held, 3)))
+    positions = [p for _, p in keys]
+    confidence = round(sum(o.weight for o in usable) / len(usable), 2)
+    confidence = max(0.0, min(1.0, confidence))
+    if max(positions) - min(positions) < MIN_TRAVEL:
+        steady = round(statistics.median(smooth), 3)
+        return CropPath(
+            ((0.0, steady),),
+            "steady",
+            confidence,
+            "The subject stays put, so the window is steady.",
+        )
+    return CropPath(
+        _thin(keys), "follow", confidence, "The window follows the subject with a slow, smooth pan."
+    )
+
+
+def _thin(keys: list[tuple[float, float]]) -> tuple[tuple[float, float], ...]:
+    """Drop repeated times and cap the keyframe count (keeps the first and last)."""
+    clean: list[tuple[float, float]] = []
+    for t, p in keys:
+        if clean and t <= clean[-1][0]:
+            clean[-1] = (clean[-1][0], p) if t == clean[-1][0] else clean[-1]
+            continue
+        if len(clean) >= 2 and clean[-1][1] == p == clean[-2][1]:
+            clean[-1] = (t, p)
+            continue
+        clean.append((t, p))
+    if len(clean) > MAX_KEYFRAMES:
+        step = (len(clean) - 1) / (MAX_KEYFRAMES - 1)
+        clean = [clean[round(i * step)] for i in range(MAX_KEYFRAMES)]
+    return tuple(clean)
+
+
+def position_at(path: Sequence[tuple[float, float]], t: float) -> float:
+    """Window position at ``t`` seconds by linear interpolation between keyframes."""
+    if not path:
+        return CENTER
+    if t <= path[0][0]:
+        return path[0][1]
+    for (t0, p0), (t1, p1) in pairwise(path):
+        if t <= t1:
+            return p0 if t1 <= t0 else p0 + (p1 - p0) * (t - t0) / (t1 - t0)
+    return path[-1][1]

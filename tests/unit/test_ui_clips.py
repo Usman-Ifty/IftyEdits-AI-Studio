@@ -113,7 +113,7 @@ def test_breakdown_and_signal_evidence(
     db_conn: sqlite3.Connection, candidates: list[ClipCandidate]
 ) -> None:
     rows = component_rows(candidates[0])
-    assert len(rows) == 12 and all(0 <= r["Value"] <= 100 and r["Why"] for r in rows)
+    assert len(rows) == 13 and all(0 <= r["Value"] <= 100 and r["Why"] for r in rows)
     repo = ClipRepository(db_conn)
     signals = repo.signals(candidates[0].analysis_id)
     inside = signals_for(candidates[0], signals)
@@ -163,3 +163,16 @@ def test_job_labels() -> None:
     assert job_outcome(_job({"analysis_id": 1, "candidates": 4, "reused": True})) == "reused"
     row = job_row(_job(None))
     assert row["Kind"] == "analyse clips" and row["File"] == "video #3"
+
+
+def test_card_text_prefers_strengths_and_stays_short(candidates: list[ClipCandidate]) -> None:
+    from iftyedits.ui.clips import card_reason, card_warning
+
+    base = candidates[0]
+    rich = replace(base, strengths=("Strong opening hook", "Clear payoff"), weaknesses=("Thin",))
+    assert card_reason(rich) == "Why: Strong opening hook; Clear payoff."
+    assert card_warning(rich) == "Thin"
+    bare = replace(base, strengths=(), weaknesses=(), explanation="A. " + "word " * 80)
+    assert card_reason(bare) == "A." and card_warning(bare) is None
+    long = replace(base, strengths=(), explanation="word " * 80)
+    assert len(card_reason(long)) <= 150 and card_reason(long).endswith("\u2026")

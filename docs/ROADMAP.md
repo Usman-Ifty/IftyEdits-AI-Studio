@@ -419,6 +419,12 @@ frame, caption, render, verify), detail-based auto-framing, two more caption pre
 redesigned dark interface, Getting started page and Exports page. Not done: face tracking,
 emphasis words, scoring changes. See D25.
 
+# Phase 4B — Clip quality, moving crop, caption emphasis (implemented 2026-11-22)
+
+Scoring v3 (density), selection policy and review mode, time-varying crop, caption emphasis and
+presets, candidate cards, onboarding tracker, job retry. See D26 and `docs/PROGRESS.md`. Face
+detection remains out of scope until a model can be verified offline.
+
 # Phase 4 — SEO and Publishing Metadata
 
 **Goal:** Generate useful YouTube metadata for each selected Short.

@@ -95,6 +95,11 @@ transcribes, finds the best moments, picks a steady crop and exports each chosen
 own 1080x1920 MP4 in `data/exports/shorts/<title>-v<id>/`. Each file is checked with ffprobe.
 Re-running reuses finished stages and never overwrites an export. Needs a running worker
 (`iftyedits ui` starts one). **Exports** lists the files; **Getting started** walks through it.
+`--review` lists the picks without rendering; `--min-length` and `--max-length` bound clip
+length. Weak clips are never added to reach the count. When the picture is wide the crop can
+follow the busiest part of the scene smoothly (it does not recognise faces); a crop you set by
+hand always wins. Caption presets: Classic, Boxed, Highlight, Minimal, Impact, Studio, Clean,
+Punchy, Cinematic, Mobile; optional colouring of key words.
 Downloading does not grant rights: you are responsible for being allowed to use each video.
 
 ## How import works

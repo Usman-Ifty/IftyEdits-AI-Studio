@@ -42,7 +42,7 @@ from iftyedits.core.signals import (
     tokens,
 )
 
-SCORING_VERSION = 2
+SCORING_VERSION = 3
 """Bump when components, weights or penalties change, so stored scores can be recomputed."""
 
 DEFAULT_WEIGHTS: Mapping[str, float] = {
@@ -58,6 +58,7 @@ DEFAULT_WEIGHTS: Mapping[str, float] = {
     "duration_fit": 0.08,
     "transcript_quality": 0.06,
     "coherence": 0.05,
+    "density": 0.06,
 }
 
 LABELS: Mapping[str, str] = {
@@ -73,6 +74,7 @@ LABELS: Mapping[str, str] = {
     "duration_fit": "Duration fit",
     "transcript_quality": "Transcript quality",
     "coherence": "Coherence",
+    "density": "Content density",
 }
 
 CATEGORY_LABELS: Mapping[str, str] = {
@@ -531,6 +533,23 @@ def _coherence(f: _Facts) -> _Part:
     )
 
 
+def _density(f: _Facts) -> _Part:
+    """How much substance each second carries: content words and distinct ideas, not filler."""
+    toks = [t for s in f.sentences for t in tokens(s.text)]
+    if not toks or f.duration <= 0:
+        return _Part(0.2, "No measurable content")
+    content = _content_counter(f.sentences)
+    share = sum(content.values()) / len(toks)
+    distinct_rate = len(content) / f.duration
+    share_fit = _clamp((share - 0.2) / 0.3)
+    rate_fit = _clamp(distinct_rate / 0.8)
+    value = 0.5 * share_fit + 0.5 * rate_fit
+    detail = f"{share:.0%} content words, {distinct_rate:.2f} distinct ideas per second"
+    issues = ("Thin content: mostly filler words",) if share < 0.25 else ()
+    positive = "Dense with substance" if value >= 0.7 else ""
+    return _Part(value, detail, positive, issues)
+
+
 def _components(
     f: _Facts, weights: ScoringWeights
 ) -> tuple[list[ScoreComponent], int, dict[str, _Part]]:
@@ -549,6 +568,7 @@ def _components(
         "duration_fit": _duration_fit(f),
         "transcript_quality": _quality(f),
         "coherence": _coherence(f),
+        "density": _density(f),
     }
     out: list[ScoreComponent] = []
     for name in DEFAULT_WEIGHTS:

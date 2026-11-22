@@ -655,3 +655,25 @@ Phase 4 metadata (titles, descriptions, tags) or batch export.
 SEO metadata (titles, descriptions, tags) and the safety review, then optional upload with
 explicit approval.
 
+## Phase 4B — Clip quality, moving crop, caption emphasis, onboarding (2026-11-22)
+
+### Completed tasks
+- Scoring v3 with a density component; selection policy (count, length, gap, near-duplicates,
+  never pad); review-only production (`--review`, `--min-length`, `--max-length`).
+- Time-varying crop (`crop_path`) from `ShortService.suggest_path`, smoothed with dead zone, speed
+  limit and scene-cut jumps; rendered by an FFmpeg `crop` expression; editor shows the active
+  framing mode and keeps the manual slider authoritative.
+- Caption emphasis (key words coloured), four new presets, bold toggle.
+- Clips page: best-match cards with thumbnails, reasons and warnings; Getting started progress
+  tracker, score and troubleshooting sections; Jobs "Retry" for failed or cancelled productions.
+- Real URL test: metadata and download of a CC-BY video (see D26).
+- Docs: D26, README, USER_GUIDE, TESTING, ROADMAP.
+
+### Known limitations
+- The crop follows image detail, not faces or speakers (no face model available offline; D26).
+- Analyses stored before scoring v3 show generic card reasons until re-analysed.
+- Narrow screens: editor metric values truncate long time ranges.
+- Downloaded Shorts sources may be AV1; the local FFmpeg decoded it, but speed was not benchmarked.
+
+### Next recommended task
+SEO metadata and the safety review, then optional upload with explicit approval.

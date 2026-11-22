@@ -290,3 +290,28 @@ def test_ui_labels_cover_every_preset_size_and_quality() -> None:
     assert set(CAPTION_PRESET_LABELS) == set(CAPTION_PRESETS)
     assert set(SIZE_LABELS) == set(OUTPUT_SIZES)
     assert set(QUALITY_LABELS) == set(QUALITY_CRF)
+
+
+def test_moving_crop_roundtrips_validates_and_keeps_old_hashes() -> None:
+    from iftyedits.core.errors import ShortConfigError
+    from iftyedits.core.shorts import ShortConfig, compute_crop, crop_x_expression
+
+    plain = ShortConfig(start_s=0, end_s=20)
+    assert "crop_path" not in plain.to_dict()  # existing settings keep their hash
+    moving = ShortConfig(start_s=0, end_s=20, crop_path=((0.0, 0.2), (10.0, 0.8))).validate()
+    assert ShortConfig.from_json(moving.to_json()) == moving
+    assert moving.config_hash(video_sha256="a", kind="export", has_audio=True) != plain.config_hash(
+        video_sha256="a", kind="export", has_audio=True
+    )
+    for bad in (((0.0, 0.2), (0.0, 0.3)), ((float("nan"), 0.1),), ((5.0, 0.2), (1.0, 0.3))):
+        with pytest.raises(ShortConfigError):
+            ShortConfig(start_s=0, end_s=20, crop_path=bad).validate()
+    many = tuple((float(i) * 0.1, 0.5) for i in range(40))
+    with pytest.raises(ShortConfigError):
+        ShortConfig(start_s=0, end_s=20, crop_path=many).validate()
+    clamped = ShortConfig(start_s=0, end_s=10, crop_path=((0.0, -1.0), (50.0, 3.0))).validate()
+    assert clamped.crop_path == ((0.0, 0.0), (10.0, 1.0))
+    crop = compute_crop(1920, 1080, 0.5)
+    expr = crop_x_expression(crop, ((0.0, 0.0), (10.0, 1.0)))
+    assert "if(lt(t,10)" in expr and expr.count("(") == expr.count(")")
+    assert crop_x_expression(crop, ()) == str(crop.x)

@@ -13,6 +13,7 @@ from iftyedits.adapters.short_render import crop_guide, framed_still
 from iftyedits.config import Settings
 from iftyedits.core.captions import CaptionCue, clean_text
 from iftyedits.core.errors import IftyEditsError, ShortConfigError
+from iftyedits.core.framing import position_at
 from iftyedits.core.models import JobStatus
 from iftyedits.core.shorts import (
     CAPTION_PRESETS,
@@ -121,11 +122,26 @@ def k(name: str) -> str:
     return f"ed{pid}-{name}"
 
 
+def _anchor_of(ss: Any) -> tuple[Any, ...]:
+    """What a moving path was made for: the crop slider and the clip range."""
+    return (ss.get(k("crop")), ss.get(k("start")), ss.get(k("end")))
+
+
+def active_path(ss: Any) -> tuple[tuple[float, float], ...]:
+    """The moving crop path, or nothing once the crop or range was changed by hand."""
+    path = ss.get(k("path")) or []
+    if not path or ss.get(k("path-anchor")) != _anchor_of(ss):
+        return ()
+    return tuple((float(t), float(p)) for t, p in path)
+
+
 def load_widgets(config: ShortConfig) -> None:
     """Copy stored settings into this project's widget state."""
     st.session_state[k("start")] = round(config.start_s, 1)
     st.session_state[k("end")] = round(config.end_s, 1)
     st.session_state[k("crop")] = round(config.crop_position * 100)
+    st.session_state[k("path")] = [list(p) for p in config.crop_path]
+    st.session_state[k("path-anchor")] = _anchor_of(st.session_state)
     c = config.captions
     st.session_state[k("cap-on")] = c.enabled
     st.session_state[k("preset")] = c.preset if c.preset in CAPTION_PRESETS else "classic"
@@ -136,6 +152,10 @@ def load_widgets(config: ShortConfig) -> None:
     st.session_state[k("bg")] = c.background
     st.session_state[k("hl")] = c.highlight
     st.session_state[k("hcolor")] = c.highlight_color
+    st.session_state[k("bgop")] = c.background_opacity
+    st.session_state[k("emph")] = c.emphasis
+    st.session_state[k("ecolor")] = c.emphasis_color
+    st.session_state[k("bold")] = c.bold
     st.session_state[k("align")] = c.align
     st.session_state[k("pos")] = round(c.position, 2)
     st.session_state[k("width")] = round(c.width_fraction, 2)
@@ -174,6 +194,13 @@ def on_preset() -> None:
         "background": "bg",
         "highlight": "hl",
         "highlight_color": "hcolor",
+        "background_opacity": "bgop",
+        "emphasis": "emph",
+        "emphasis_color": "ecolor",
+        "bold": "bold",
+        "position": "pos",
+        "width_fraction": "width",
+        "max_lines": "lines",
     }
     for field, key in mapping.items():
         if field in values:
@@ -187,8 +214,9 @@ def on_reset_range() -> None:
 
 
 def on_reset_frame() -> None:
-    """Centre the crop."""
+    """Centre the crop (and drop any moving path)."""
     st.session_state[k("crop")] = 50
+    st.session_state[k("path")] = []
 
 
 def on_reset_captions() -> None:
@@ -247,20 +275,29 @@ with left:
         if geometry.is_full_frame:
             st.info("This video is already 9:16, so nothing is cropped.")
         else:
+            mode = "Auto-follow (the window moves slowly with the picture)"
+            if not active_path(st.session_state):
+                mode = "Manual or steady (one fixed window)"
+            st.caption(f"Framing mode: {mode}")
             if st.button(
                 "Auto-frame",
                 key=k("af"),
-                help="Looks at a few frames of the saved clip range and moves the crop over "
-                "the busiest part of the picture. It does not recognise faces; check the guide.",
+                help="Looks at frames across the saved clip range and moves the crop over the "
+                "busiest part of the picture, panning slowly if it shifts. It does not "
+                "recognise faces. Moving the slider afterwards switches back to manual.",
             ):
                 with closing(open_database(settings.db_path)) as conn:
                     try:
-                        found = _service(conn).suggest_crop(pid)
+                        found = _service(conn).suggest_path(pid)
                     except IftyEditsError as exc:
                         st.error(str(exc))
                     else:
-                        if found.method == "detail":
-                            st.session_state[k("crop")] = round(found.position * 100)
+                        if found.method in ("follow", "steady"):
+                            st.session_state[k("crop")] = round(found.keyframes[0][1] * 100)
+                            st.session_state[k("path")] = (
+                                [list(p) for p in found.keyframes] if found.moves else []
+                            )
+                            st.session_state[k("path-anchor")] = _anchor_of(st.session_state)
                         st.info(found.note)
             st.slider(
                 "Crop position (0 = far left, 50 = center, 100 = far right)",
@@ -290,6 +327,15 @@ with left:
         s3.color_picker("Text color", key=k("tcolor"))
         s4.color_picker("Outline color", key=k("ocolor"))
         s5.color_picker("Active word", key=k("hcolor"))
+        e1, e2, e3 = st.columns([2, 1, 1])
+        e1.checkbox(
+            "Colour the key words",
+            key=k("emph"),
+            help="Colours a few important words in each caption: numbers, SHOUTED words and long "
+            "content words. Common words are never coloured.",
+        )
+        e2.color_picker("Key word color", key=k("ecolor"))
+        e3.checkbox("Bold text", key=k("bold"))
         s6, s7 = st.columns(2)
         s6.selectbox(
             "Background",
@@ -379,6 +425,7 @@ def collect() -> ShortConfig:
         start_s=float(g("start", project.config.start_s)),
         end_s=float(g("end", project.config.end_s)),
         crop_position=g("crop", 50) / 100,
+        crop_path=active_path(ss),
         captions=CaptionStyle(
             enabled=bool(g("cap-on", True)),
             preset=g("preset", "classic"),
@@ -387,9 +434,12 @@ def collect() -> ShortConfig:
             outline_color=g("ocolor", "#000000"),
             outline_px=int(g("outline", 6)),
             background=g("bg", "none"),
-            background_opacity=0.72,
+            background_opacity=float(g("bgop", 0.72)),
             highlight=bool(g("hl", False)),
             highlight_color=g("hcolor", "#FFD400"),
+            emphasis=bool(g("emph", False)),
+            emphasis_color=g("ecolor", "#FFD400"),
+            bold=bool(g("bold", True)),
             align=g("align", "center"),
             position=float(g("pos", 0.68)),
             width_fraction=float(g("width", 0.86)),
@@ -467,7 +517,11 @@ with right:
             with closing(open_database(settings.db_path)) as conn:
                 still_path = _service(conn).still(video.id, config.start_s + at)
             frame = Image.open(still_path)
-            geometry = compute_crop(info.width, info.height, config.crop_position)
+            geometry = compute_crop(
+                info.width,
+                info.height,
+                position_at(config.crop_path, at) if config.crop_path else config.crop_position,
+            )
             active = next((c for c in cues if c.start_s <= at < c.end_s), None)
             if active is None and cues:
                 active = min(cues, key=lambda c: abs(c.start_s - at))

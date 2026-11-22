@@ -335,3 +335,26 @@ def test_original_video_is_untouched(make_short: Setup, sources: dict[str, Path]
     service, project = make_short("land.mp4")
     _run(service, project=project)
     assert sha256_file(sources["land.mp4"]) == before
+
+
+def test_moving_crop_exports_a_valid_short(make_short: Setup, ffmpeg: str) -> None:
+    service, project = make_short("land.mp4")
+    service.save_config(
+        project,
+        ShortConfig(
+            start_s=1.0, end_s=9.0, crop_path=((0.0, 0.0), (3.0, 0.0), (6.0, 1.0), (8.0, 1.0))
+        ),
+    )
+    out = _run(service, project=project)
+    props = _probe(out)
+    assert (props["w"], props["h"]) == (1080, 1920)
+    _decode(ffmpeg, out)
+
+
+def test_suggest_path_returns_a_bounded_path_or_falls_back(make_short: Setup) -> None:
+    service, project = make_short("land.mp4")
+    path = service.suggest_path(project)
+    assert path.method in {"follow", "steady", "center", "none"}
+    assert all(0.0 <= p <= 1.0 for _, p in path.keyframes)
+    portrait, pid = make_short("portrait.mp4")
+    assert portrait.suggest_path(pid).method == "none"

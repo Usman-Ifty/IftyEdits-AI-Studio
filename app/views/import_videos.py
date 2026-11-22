@@ -56,6 +56,11 @@ with tab_url:
             index=list(CAPTION_PRESET_LABELS).index("highlight"),
             format_func=lambda key: CAPTION_PRESET_LABELS[key],
         )
+        review = st.checkbox(
+            "Review the picks before rendering",
+            help="Selects the best clips and stops. Check them on the Clips page, then "
+            "produce again without this box.",
+        )
         allowed = st.checkbox("I have permission to use this video")
         b1, b2 = st.columns(2)
         produce = b1.form_submit_button("Produce Shorts", type="primary")
@@ -69,7 +74,10 @@ with tab_url:
                 queue = JobQueue(conn)
                 if produce:
                     options = ProductionOptions(
-                        max_clips=int(clips), min_score=float(min_score), caption_preset=preset
+                        max_clips=int(clips),
+                        min_score=float(min_score),
+                        caption_preset=preset,
+                        review_only=review,
                     ).validate()
                     job_id, created = queue.enqueue_production(
                         options.as_payload(), url=video_url.canonical

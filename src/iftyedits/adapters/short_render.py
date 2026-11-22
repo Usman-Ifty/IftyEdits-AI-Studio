@@ -30,6 +30,7 @@ from iftyedits.core.shorts import (
     CaptionStyle,
     CropGeometry,
     ShortConfig,
+    crop_x_expression,
 )
 
 DURATION_TOLERANCE_S = 0.5
@@ -123,12 +124,20 @@ def pick_encoder(preference: str, hardware_verified: bool) -> EncodeChoice:
     return EncodeChoice(SOFTWARE_H264, False)
 
 
+def _crop_step(config: ShortConfig, crop: CropGeometry) -> str:
+    """The crop filter: steady, or sliding along the automatic framing path."""
+    if len(config.crop_path) > 1:
+        x = crop_x_expression(crop, config.crop_path)
+        return f"crop={crop.width}:{crop.height}:x='{x}':y={crop.y}"
+    return f"crop={crop.width}:{crop.height}:{crop.x}:{crop.y}"
+
+
 def _video_chain(
     config: ShortConfig, crop: CropGeometry, fps: int, has_captions: bool, duration_s: float
 ) -> str:
     steps = [
         f"fps={fps}",
-        f"crop={crop.width}:{crop.height}:{crop.x}:{crop.y}",
+        _crop_step(config, crop),
         f"scale={crop.out_w}:{crop.out_h}:flags=lanczos",
         "setsar=1",
     ]

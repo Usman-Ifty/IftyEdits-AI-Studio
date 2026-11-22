@@ -14,6 +14,10 @@ CAPTION_PRESET_LABELS = {
     "minimal": "Minimal (smaller, thin outline)",
     "impact": "Impact (large, cyan active word)",
     "studio": "Studio (soft box, violet active word)",
+    "clean": "Clean creator (white, key words in yellow)",
+    "punchy": "Bold punchy (large, key words in pink)",
+    "cinematic": "Cinematic (small, light, low on screen)",
+    "mobile": "High contrast mobile (large on a solid box)",
 }
 SIZE_LABELS = {
     "1080p": "1080 x 1920 (recommended)",

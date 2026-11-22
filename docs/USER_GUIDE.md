@@ -216,8 +216,10 @@ suggestion; edits are saved as settings for that one Short.
 - **Trim**: start and end in seconds (3 to 180 s, inside the video). **Reset to the AI
   suggestion** restores the original range.
 - **Framing**: a 0 to 100 crop position (50 = centre). The crop keeps the full height and is
-  never stretched.
-- **Captions**: on or off, presets (Classic, Boxed, Highlight, Minimal), size, colours,
+  never stretched. The page says which mode is active: *Auto-follow* (a smooth moving crop from
+  **Auto-frame**) or *Manual or steady*. Moving the slider or changing the trim switches to
+  manual. The moving crop follows the busiest part of the picture; it does not recognise faces.
+- **Captions**: on or off, presets (Classic, Boxed, Highlight, Minimal, Impact, Studio, Clean, Punchy, Cinematic, Mobile), key-word colouring, bold, size, colours,
   outline, background, alignment and position. The text box lists each caption line so you can
   correct wording; corrections are stored with the Short, not in the transcript. Highlight
   only works when the transcript has word timing.
@@ -231,6 +233,9 @@ suggestion; edits are saved as settings for that one Short.
   **Reset everything** returns every setting to its default.
 
 ### Jobs
+
+A failed or cancelled production has a **Retry** button that queues the same production again
+(finished stages and exports are reused).
 
 Active jobs (imports, media preparation, transcription and model downloads) with progress bars
 and **Cancel** buttons, then the job history with outcomes, and an **Errors** list. Refreshed
@@ -356,10 +361,9 @@ Data folders (never committed to Git):
 ## 8. Current limitations
 
 - There is no uploading or metadata generation yet. HDR video is not tone-mapped. Automatic
-  framing picks one steady crop per clip from image detail; it is not face or speaker tracking
-  and cannot follow movement inside a clip. Adjust the crop in the Short editor.
-- Link ingestion depends on yt-dlp and YouTube; if YouTube changes, update yt-dlp. Captions
-  have no emphasis words. Renders are made one at a time.
+  framing follows image detail with a smooth moving crop; it is not face or speaker tracking.
+  Adjust the crop in the Short editor.
+- Link ingestion depends on yt-dlp and YouTube; if YouTube changes, update yt-dlp. Renders are made one at a time.
 - Clip scoring uses English wording cues (including boilerplate detection), transcript timings, loudness and scene changes.
   It does not analyse faces, speakers or tone of voice, and suggestions can be previewed and
   trimmed in the Short editor.

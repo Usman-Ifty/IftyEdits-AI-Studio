@@ -339,8 +339,34 @@ def test_penalties_come_first_in_the_weaknesses() -> None:
 
 
 def test_versions_are_bumped_and_recorded() -> None:
-    assert SCORING_VERSION == 2 and SIGNALS_VERSION == 2
+    assert SCORING_VERSION == 3 and SIGNALS_VERSION == 2
     evidence = evidence_for(CONTENT)
     result: ScoredCandidate = score_draft(evidence, whole(evidence), CONFIG)
-    assert result.evidence["scoring_version"] == 2
+    assert result.evidence["scoring_version"] == 3
     assert result == score_draft(evidence, whole(evidence), CONFIG)  # deterministic
+
+
+FILLER = (
+    "Um so yeah you know it is like what it is and stuff.",
+    "Yeah so I mean it was kind of like you know whatever.",
+    "And then it was um like yeah so that is that I guess.",
+    "So yeah you know like I do not know it is just like that.",
+)
+
+
+def _density(lines: Sequence[str]) -> float:
+    evidence = evidence_for(lines)
+    result = score_draft(evidence, whole(evidence), CONFIG)
+    return next(c.value for c in result.components if c.name == "density")
+
+
+def test_density_separates_substance_from_filler() -> None:
+    assert _density(CONTENT) > _density(FILLER) + 0.3
+
+
+def test_density_is_deterministic_and_listed_in_the_breakdown() -> None:
+    evidence = evidence_for(CONTENT)
+    a = score_draft(evidence, whole(evidence), CONFIG)
+    b = score_draft(evidence, whole(evidence), CONFIG)
+    assert a.score == b.score and [c.value for c in a.components] == [c.value for c in b.components]
+    assert "density" in [c.name for c in a.components]

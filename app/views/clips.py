@@ -10,6 +10,7 @@ from iftyedits.config import Settings
 from iftyedits.core.clip_models import ClipCandidate, ClipDecision
 from iftyedits.core.models import CancelOutcome, Job, JobStatus, Video
 from iftyedits.pipeline.jobs import ANALYZE_CLIPS, JobQueue
+from iftyedits.services.shorts import build_short_service
 from iftyedits.storage.clips import ClipRepository
 from iftyedits.storage.db import open_database
 from iftyedits.storage.transcripts import TranscriptRepository
@@ -19,6 +20,8 @@ from iftyedits.ui.clips import (
     SORT_OPTIONS,
     ClipFilter,
     analysis_facts,
+    card_reason,
+    card_warning,
     category_label,
     clip_row,
     component_rows,
@@ -193,7 +196,54 @@ st.caption(f"Showing {len(shown)} of {len(candidates)}.")
 if not shown:
     st.info("No suggestion matches these filters.")
     st.stop()
-st.dataframe([clip_row(c) for c in shown], hide_index=True, width="stretch")
+
+
+def _label(c: ClipCandidate) -> str:
+    return f"#{c.rank}  {c.title}  ({round(c.score)})"
+
+
+def _inspect(c: ClipCandidate) -> None:
+    st.session_state[f"clips-pick-{video.id}"] = _label(c)
+
+
+def _thumb(c: ClipCandidate) -> object | None:
+    """A still from the middle of the clip, or ``None`` when it cannot be read."""
+    middle = (c.effective_start_s + c.effective_end_s) / 2
+    try:
+        with closing(open_database(settings.db_path)) as conn:
+            return build_short_service(settings, conn).still(video.id, middle)
+    except Exception:
+        return None
+
+
+st.markdown("**Best matches**")
+top = shown[:6]
+for row_start in range(0, len(top), 3):
+    cols = st.columns(3)
+    for col, cand in zip(cols, top[row_start : row_start + 3], strict=False):
+        with col, st.container(border=True):
+            thumb = _thumb(cand)
+            if thumb is not None:
+                st.image(str(thumb), width="stretch")
+            st.markdown(
+                f"**#{cand.rank} {cand.title}**  \n"
+                f"Score **{round(cand.score)}** ({score_band(cand.score)}) · "
+                f"{category_label(cand.category)} · {span_label(cand)}"
+            )
+            st.caption(card_reason(cand))
+            warning = card_warning(cand)
+            if warning:
+                st.caption(f":orange[Heads up: {warning}]")
+            st.button(
+                "Inspect",
+                key=f"card-{cand.id}",
+                on_click=_inspect,
+                args=(cand,),
+                width="stretch",
+                help="Shows the full reasons, score breakdown and edit actions below.",
+            )
+with st.expander(f"All {len(shown)} suggestions as a table"):
+    st.dataframe([clip_row(c) for c in shown], hide_index=True, width="stretch")
 
 
 def _decide(candidate: ClipCandidate, decision: ClipDecision | None, text: str) -> None:
@@ -203,7 +253,9 @@ def _decide(candidate: ClipCandidate, decision: ClipDecision | None, text: str) 
     st.rerun()
 
 
-options = {f"#{c.rank}  {c.title}  ({round(c.score)})": c for c in shown}
+options = {_label(c): c for c in shown}
+if st.session_state.get(f"clips-pick-{video.id}") not in options:
+    st.session_state.pop(f"clips-pick-{video.id}", None)  # a filter hid the earlier choice
 picked = options[st.selectbox("Inspect", list(options), key=f"clips-pick-{video.id}")]
 st.markdown(
     f"### {picked.title}\n"

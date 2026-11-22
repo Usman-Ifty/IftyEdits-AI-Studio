@@ -245,3 +245,12 @@ These change files or state; run them deliberately:
   files, idempotent retry and cancel. No network is used and no real YouTube download is
   tested in CI.
 
+## Phase 4B tests
+
+- `tests/unit/test_framing.py` (moving crop path: dead zone, speed limit, scene cut, fallbacks,
+  determinism), `test_shorts_core.py` (crop path validation, hash stability, FFmpeg expression),
+  `test_caption_emphasis.py`, `test_scoring_quality.py` (density), `test_production.py`
+  (selection policy, review mode), `test_ui_clips.py`, `test_ui_phase4_pages.py` (tracker, Retry).
+- `tests/integration/test_shorts_ffmpeg.py`: a moving crop exports a valid 1080x1920 Short.
+- Manual, not in CI: a real download of a Creative Commons video with `YtDlpDownloader`
+  (needs network; no cookies). Run it only for videos you may download.

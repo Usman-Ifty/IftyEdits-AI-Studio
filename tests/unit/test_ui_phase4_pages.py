@@ -115,3 +115,33 @@ def test_production_rows_handle_missing_and_present_results() -> None:
     )
     assert rows[0]["Size"] == "1080x1920" and rows[0]["Output"] == "/x/a.mp4"
     assert rows[1]["Size"] == "-" and rows[1]["Reason"] == "boom"
+
+
+def test_getting_started_shows_tracker_and_help_sections(app_env: None) -> None:
+    app = _run("getting_started.py")
+    text = " ".join(m.value for m in app.markdown)
+    assert "Import" in text and "Export" in text
+    labels = " ".join(e.label for e in app.expander)
+    assert "What the scores mean" in labels and "When something fails" in labels
+
+
+def test_workflow_tracker_and_selected_status() -> None:
+    from iftyedits.ui.theme import clip_status, workflow_tracker
+
+    none_done = workflow_tracker((False,) * 5)
+    assert "Next:" in none_done and "Import" in none_done
+    partial = workflow_tracker((True, True, False, False, False))
+    assert partial.count("Next:") == 1
+    assert clip_status("selected") == ("Selected", "good")
+
+
+def test_jobs_page_retries_a_failed_production(app_env: None, db_conn: sqlite3.Connection) -> None:
+    queue = JobQueue(db_conn)
+    queue.enqueue_production({}, url="https://youtu.be/dQw4w9WgXcQ")
+    job = queue.claim("w1")
+    assert job is not None
+    assert queue.fail(job.id, "network down", worker_id="w1")
+    app = _run("jobs.py")
+    _submit(app, "Retry")
+    jobs = queue.list_recent()
+    assert sum(1 for j in jobs if j.status.value == "queued") == 1

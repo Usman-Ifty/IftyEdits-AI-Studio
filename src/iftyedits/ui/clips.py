@@ -60,6 +60,27 @@ def span_label(candidate: ClipCandidate) -> str:
     return f"{timestamp(start)} - {timestamp(end)} ({end - start:.0f}s)"
 
 
+def card_reason(candidate: ClipCandidate, limit: int = 150) -> str:
+    """One plain sentence on why this moment was suggested (cut at a word, never mid-word)."""
+    if candidate.strengths:
+        text = "Why: " + "; ".join(candidate.strengths[:2]).rstrip(".") + "."
+        if len(text) <= limit:
+            return text
+    text = " ".join(candidate.explanation.split())
+    for end in (". ", "! ", "? "):
+        if end in text:
+            text = text[: text.index(end) + 1]
+            break
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rsplit(" ", 1)[0].rstrip(",;:") + "\u2026"
+
+
+def card_warning(candidate: ClipCandidate) -> str | None:
+    """The most important weakness to show on a card, or ``None``."""
+    return candidate.weaknesses[0] if candidate.weaknesses else None
+
+
 def clip_row(candidate: ClipCandidate) -> dict[str, Any]:
     """One table row for a suggestion."""
     return {

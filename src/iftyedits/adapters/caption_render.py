@@ -20,7 +20,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-from iftyedits.core.captions import CaptionCue
+from iftyedits.core.captions import CaptionCue, emphasis_indexes
 from iftyedits.core.shorts import SAFE_BOTTOM, SAFE_SIDE, SAFE_TOP, CaptionStyle
 
 _BOLD_FONTS = (
@@ -218,6 +218,7 @@ def render_cue(
     fill = _rgba(style.text_color)
     stroke = _rgba(style.outline_color)
     index = 0
+    stressed = emphasis_indexes(words) if style.emphasis else frozenset[int]()
     for line_no, line in enumerate(lines):
         y = top + pad + outline + line_no * line_h
         line_w = metrics.line_width(line)
@@ -231,7 +232,7 @@ def render_cue(
         else:
             x = inner_left + (inner_w - line_w) / 2
         for word in line:
-            colour = fill
+            colour = _rgba(style.emphasis_color) if index in stressed else fill
             if style.highlight and active_word is not None and index == active_word:
                 colour = _rgba(style.highlight_color)
             draw.text(
