@@ -102,6 +102,8 @@ class YouTubeUploadService:
             client,
             self._store(),
             chunk_bytes=self.settings.youtube_chunk_mb * 1024 * 1024,
+            api_base=self.settings.youtube_api_base,
+            upload_base=self.settings.youtube_upload_base,
         )
 
     def connection(self) -> Connection:
@@ -194,8 +196,9 @@ class YouTubeUploadService:
         )
         if current is None or current.fingerprint() != record.fingerprint:
             raise UploadNotApprovedError(
-                "The video, title, description or settings changed after this draft was made. "
-                "Prepare the upload again and review the new details."
+                "The video, title, description or settings changed after this draft was made, "
+                "so it was not approved. Discard this draft, then press “Review upload "
+                "details” again."
             )
         if not allow_duplicate:
             for other in self.repo.list_for_project(record.project_id, 50):
@@ -230,13 +233,16 @@ class YouTubeUploadService:
         return job_id
 
     def cancel(self, upload_id: int) -> bool:
-        """Cancel before it starts (also cancels the queued job)."""
+        """Cancel before it starts, or ask a running upload to stop between chunks."""
         record = self.repo.get(upload_id)
         if record is None:
             return False
         done = self.repo.cancel(upload_id)
         if done and record.job_id:
             self.queue.request_cancel(record.job_id)
+        if not done and record.status == yt.UPLOADING and record.job_id:
+            self.queue.request_cancel(record.job_id)  # the worker stops between chunks
+            return True
         return done
 
     def records(self, project_id: int) -> list[UploadRecord]:
@@ -271,7 +277,9 @@ class YouTubeUploadService:
 
             video_id = client.upload(path, resource, on_progress=progress, cancelled=cancelled)
         except JobCancelledError:
-            self.repo.fail(upload_id, yt.KIND_OTHER, "Cancelled before the upload finished.")
+            self.repo.fail(
+                upload_id, yt.KIND_CANCELLED, "You cancelled this upload. Nothing was published."
+            )
             raise
         except UploadNotApprovedError as exc:
             self.repo.fail(upload_id, yt.KIND_OTHER, str(exc))

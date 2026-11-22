@@ -127,7 +127,9 @@ with closing(open_database(settings.db_path)) as conn:
         )
 
     tabs = st.tabs(
-        ["Metadata", "Thumbnail", "Safety review", "Rights", "Checklist", "Package", "YouTube"]
+        ["Metadata", "Thumbnail", "Safety review", "Rights", "Checklist", "Package", "YouTube"],
+        key="publish-tab",
+        on_change="rerun",
     )
 
     # ------------------------------------------------------------------ metadata

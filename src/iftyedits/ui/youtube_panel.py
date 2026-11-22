@@ -137,6 +137,21 @@ def _status_block(settings: Settings, project_id: int) -> None:
             latest = records[0] if records else None
             active = latest is not None and latest.status in (yt.APPROVED, yt.UPLOADING)
             report = service.publishing.readiness(project_id)
+            ready = report.status == "ready"
+            status = latest.status if latest else ""
+            st.markdown(
+                theme.upload_tracker(
+                    (
+                        ready or report.can_confirm,
+                        ready,
+                        status in (yt.DRAFT, yt.APPROVED, yt.UPLOADING, yt.UPLOADED),
+                        status in (yt.APPROVED, yt.UPLOADING, yt.UPLOADED),
+                        status == yt.UPLOADED,
+                    )
+                ),
+                unsafe_allow_html=True,
+            )
+            st.caption(_next_hint(ready, report.can_confirm, report.label, status))
             if not active and latest is not None and latest.status == yt.DRAFT:
                 _draft(settings, service, latest)
             elif latest is not None and active:
@@ -182,6 +197,28 @@ def _status_block(settings: Settings, project_id: int) -> None:
             conn.close()
 
     block()
+
+
+def _next_hint(ready: bool, can_confirm: bool, label: str, status: str) -> str:
+    """One plain sentence about what to do now."""
+    if status == yt.DRAFT:
+        return "Check every detail below. Nothing is sent until you type the approval sentence."
+    if status == yt.APPROVED:
+        return "Approved. The background worker will start the upload shortly."
+    if status == yt.UPLOADING:
+        return "Uploading now. You can cancel; nothing is published either way."
+    if status == yt.UPLOADED:
+        return "Done. Open it in YouTube Studio to check it and publish it yourself."
+    if ready:
+        return (
+            "Your checklist is confirmed. Press “Review upload details” to see what would be sent."
+        )
+    if can_confirm:
+        return "The checklist is complete. Press “Confirm” in the Checklist tab, then come back."
+    return (
+        f"Status: {label}. Finish the Metadata, Safety review, Rights and Checklist tabs "
+        "first, then confirm in the Checklist tab."
+    )
 
 
 def _prepare(service: YouTubeUploadService, project_id: int) -> None:
@@ -251,36 +288,37 @@ def _progress(settings: Settings, record: UploadRecord) -> None:
         text=f"{human_size(record.bytes_sent)} of {human_size(total)}",
     )
     st.caption("Needs the studio's background worker (`iftyedits ui` starts one).")
-    if record.status == yt.APPROVED and st.button(
-        "Cancel before it starts", key=f"yt-cancel-{record.id}"
-    ):
-        _act(settings, lambda s: s.cancel(record.id), "Upload cancelled.")
+    label = "Cancel before it starts" if record.status == yt.APPROVED else "Cancel upload"
+    if st.button(label, key=f"yt-cancel-{record.id}"):
+        _act(settings, lambda s: s.cancel(record.id), "Cancel requested.")
         st.rerun()
 
 
 def _outcome(settings: Settings, record: UploadRecord) -> None:
-    st.markdown(theme.pill(record.label, _TONES[record.status]), unsafe_allow_html=True)
+    cancelled = record.status == yt.FAILED and record.error_kind == yt.KIND_CANCELLED
+    if cancelled:
+        st.markdown(theme.pill("Cancelled by you", "muted"), unsafe_allow_html=True)
+    else:
+        st.markdown(theme.pill(record.label, _TONES[record.status]), unsafe_allow_html=True)
     if record.status == yt.UPLOADED and record.studio_url:
         st.success(
             f"Uploaded as {record.details.get('visibility')}. It is NOT public. "
             f"[Open in YouTube Studio]({record.studio_url}) to check and publish it."
         )
-    if record.status == yt.FAILED:
+    if cancelled:
+        st.info(record.error or "You cancelled this upload. Nothing was published.")
+    elif record.status == yt.FAILED:
         st.error(record.error or "The upload failed.")
         if record.error_kind == yt.KIND_QUOTA:
             st.caption(
                 "Quota errors clear on their own; try again later. Manual export still works."
             )
-        if (
-            record.approved_at
-            and not record.youtube_video_id
-            and st.button(
-                "Retry this approved upload", key=f"yt-retry-{record.id}", icon=":material/refresh:"
-            )
-        ):
+    if record.status == yt.FAILED and record.approved_at and not record.youtube_video_id:
+        label = "Start this approved upload again" if cancelled else "Retry this approved upload"
+        if st.button(label, key=f"yt-retry-{record.id}", icon=":material/refresh:"):
             _act(
                 settings,
                 lambda s: s.retry(record.id),
-                "Retry queued. Details are re-checked first.",
+                "Queued again. Everything is re-checked before it uploads.",
             )
             st.rerun()

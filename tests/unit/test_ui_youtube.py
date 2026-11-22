@@ -64,3 +64,26 @@ def test_connected_but_not_ready_blocks_review_and_explains(seeded: int, connect
     assert "Connected" in _text(at)
     assert "confirm" in _text(at).lower()
     assert not any(b.label == "Approve and upload" for b in at.button)
+
+
+def test_upload_tracker_marks_finished_steps_and_the_next_one() -> None:
+    from iftyedits.ui import theme
+
+    html = theme.upload_tracker((True, True, False, False, False))
+    assert "✓ Prepare and check" in html and "✓ Confirm checklist" in html
+    assert "Next: Review details" in html and ">Approve<" in html
+    gap = theme.upload_tracker((False, True, True, True, True))
+    assert gap.count("✓") == 0 and "Next: Prepare and check" in gap
+
+
+def test_next_hint_explains_every_state() -> None:
+    from iftyedits.core import youtube as yt
+    from iftyedits.ui.youtube_panel import _next_hint
+
+    assert "Nothing is sent" in _next_hint(True, True, "", yt.DRAFT)
+    assert "worker" in _next_hint(True, True, "", yt.APPROVED)
+    assert "cancel" in _next_hint(True, True, "", yt.UPLOADING)
+    assert "publish it yourself" in _next_hint(True, True, "", yt.UPLOADED)
+    assert "Review upload details" in _next_hint(True, True, "", "")
+    assert "Confirm" in _next_hint(False, True, "", "")
+    assert "Finish" in _next_hint(False, False, "Needs work", "")

@@ -252,7 +252,9 @@ left, right = st.columns([3, 2], gap="large")
 
 with left:
     t_trim, t_frame, t_caps, t_look, t_out = st.tabs(
-        ["Trim", "Framing", "Captions", "Look and sound", "Output"]
+        ["Trim", "Framing", "Captions", "Look and sound", "Output"],
+        key="editor-tab",
+        on_change="rerun",
     )
 
     with t_trim:

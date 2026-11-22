@@ -94,6 +94,9 @@ class Settings(BaseSettings):
     youtube_token_path: Path | None = None
     """Where the sign-in token is kept; default ``~/.config/iftyedits/youtube_token.json``."""
     youtube_chunk_mb: int = Field(default=8, ge=1, le=64)
+    youtube_api_base: str = "https://www.googleapis.com/youtube/v3"
+    youtube_upload_base: str = "https://www.googleapis.com/upload/youtube/v3"
+    """Only for local test stubs: must be a Google HTTPS address or http on this computer."""
     youtube_daily_upload_limit: int = Field(default=5, ge=0)
     """Soft limit on uploads started per day in this studio (0 = no limit)."""
     anthropic_base_url: str = "https://api.anthropic.com"

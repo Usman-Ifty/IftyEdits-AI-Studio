@@ -177,6 +177,25 @@ def workflow_tracker(done: tuple[bool, ...]) -> str:
     return " ".join(parts)
 
 
+UPLOAD_STEPS = ("Prepare and check", "Confirm checklist", "Review details", "Approve", "Uploaded")
+
+
+def upload_tracker(done: tuple[bool, ...]) -> str:
+    """The five upload steps: finished ones ticked, the first open one marked next."""
+    parts: list[str] = []
+    gap = False
+    for index, name in enumerate(UPLOAD_STEPS):
+        finished = index < len(done) and done[index] and not gap
+        if finished:
+            parts.append(pill(f"\u2713 {name}", "good"))
+        elif not gap:
+            parts.append(pill(f"Next: {name}", "warn"))
+            gap = True
+        else:
+            parts.append(pill(name, "muted"))
+    return " ".join(parts)
+
+
 JOURNEY = (
     "Paste link",
     "Import video",

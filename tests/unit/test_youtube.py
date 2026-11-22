@@ -806,3 +806,111 @@ def test_package_export_still_works_without_youtube(
     from iftyedits.services.upload_package import build_package
 
     assert build_package(ready, project.id)["title"] == "The park meeting"
+
+
+# ------------------------------------------------------------------ QA pass
+
+
+@pytest.mark.parametrize(
+    ("url", "ok"),
+    [
+        ("https://accounts.google.com/o/oauth2/v2/auth", True),
+        ("https://oauth2.googleapis.com/token", True),
+        ("https://www.googleapis.com/youtube/v3", True),
+        ("http://127.0.0.1:8700/token", True),
+        ("http://localhost:1/x", True),
+        ("http://oauth2.googleapis.com/token", False),
+        ("https://evil.example.com/token", False),
+        ("https://googleapis.com.evil.example/token", False),
+        ("ftp://accounts.google.com/x", False),
+        ("not a url", False),
+    ],
+)
+def test_trusted_endpoint_only_allows_google_or_loopback(url: str, ok: bool) -> None:
+    assert yt.trusted_endpoint(url) is ok
+
+
+def test_client_file_pointing_at_an_untrusted_host_is_refused(tmp_path: Path) -> None:
+    bad = tmp_path / "bad.json"
+    bad.write_text(
+        json.dumps(
+            {
+                "installed": {
+                    "client_id": "x",
+                    "client_secret": "y",
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://evil.example.com/token",
+                }
+            }
+        )
+    )
+    with pytest.raises(YouTubeNotConfiguredError):
+        load_client_config(bad)
+
+
+def test_client_refuses_untrusted_api_hosts(tmp_path: Path) -> None:
+    cfg = ClientConfig(
+        "cid", "sec", "https://accounts.google.com/a", "https://oauth2.googleapis.com/t"
+    )
+    with pytest.raises(YouTubeNotConfiguredError):
+        YouTubeClient(
+            cfg, TokenStore(tmp_path / "c" / "t.json"), api_base="https://evil.example.com/v3"
+        )
+    with pytest.raises(YouTubeNotConfiguredError):
+        YouTubeClient(
+            cfg, TokenStore(tmp_path / "c" / "t.json"), upload_base="https://evil.example.com/up"
+        )
+
+
+def test_cancelled_running_upload_is_marked_cancelled_not_failed(
+    settings: Settings,
+    db_conn: sqlite3.Connection,
+    ready: PublishingService,
+    project: ShortProject,
+    google: Google,
+    tmp_path: Path,
+) -> None:
+    svc = make_service(settings, db_conn, ready, google, tmp_path)
+    record = svc.prepare(project.id).record
+    assert record
+    svc.approve(record.id, yt.APPROVAL_TEXT)
+    with pytest.raises(JobCancelledError):
+        svc.run_upload(record.id, cancelled=lambda: True)
+    after = svc.repo.get(record.id)
+    assert after is not None
+    assert after.status == yt.FAILED and after.error_kind == yt.KIND_CANCELLED
+    assert "Nothing was published" in (after.error or "")
+    assert after.youtube_video_id is None
+
+
+def test_cancel_of_an_uploading_record_requests_a_stop(
+    settings: Settings,
+    db_conn: sqlite3.Connection,
+    ready: PublishingService,
+    project: ShortProject,
+    google: Google,
+    tmp_path: Path,
+) -> None:
+    svc = make_service(settings, db_conn, ready, google, tmp_path)
+    record = svc.prepare(project.id).record
+    assert record
+    svc.approve(record.id, yt.APPROVAL_TEXT)
+    db_conn.execute("UPDATE youtube_uploads SET status = 'uploading' WHERE id = ?", (record.id,))
+    db_conn.commit()
+    assert svc.cancel(record.id) is True
+
+
+def test_finished_upload_reports_the_whole_file_as_sent(
+    settings: Settings,
+    db_conn: sqlite3.Connection,
+    ready: PublishingService,
+    project: ShortProject,
+    google: Google,
+    tmp_path: Path,
+) -> None:
+    svc = make_service(settings, db_conn, ready, google, tmp_path)
+    record = svc.prepare(project.id).record
+    assert record
+    svc.approve(record.id, yt.APPROVAL_TEXT)
+    finished = svc.run_upload(record.id)
+    assert finished.bytes_sent == int(finished.details["file_size"])

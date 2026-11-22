@@ -48,7 +48,6 @@ log = logging.getLogger(__name__)
 
 AUTH_URI = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URI = "https://oauth2.googleapis.com/token"  # noqa: S105 - public endpoint, not a secret
-REVOKE_URI = "https://oauth2.googleapis.com/revoke"
 API_BASE = "https://www.googleapis.com/youtube/v3"
 UPLOAD_BASE = "https://www.googleapis.com/upload/youtube/v3"
 _CHUNK_MULTIPLE = 256 * 1024
@@ -100,12 +99,14 @@ def load_client_config(path: Path | None) -> ClientConfig:
             "That file is not a Desktop-app OAuth client. In Google Cloud, create an OAuth client "
             "of type “Desktop app” and download its JSON."
         )
-    return ClientConfig(
-        str(block["client_id"]),
-        str(block["client_secret"]),
-        str(block.get("auth_uri") or AUTH_URI),
-        str(block.get("token_uri") or TOKEN_URI),
-    )
+    auth_uri = str(block.get("auth_uri") or AUTH_URI)
+    token_uri = str(block.get("token_uri") or TOKEN_URI)
+    if not (yt.trusted_endpoint(auth_uri) and yt.trusted_endpoint(token_uri)):
+        raise YouTubeNotConfiguredError(
+            "The OAuth client file points to an address that is not Google's, so it was not used "
+            "(your credentials would be sent there)."
+        )
+    return ClientConfig(str(block["client_id"]), str(block["client_secret"]), auth_uri, token_uri)
 
 
 class TokenStore:
@@ -211,6 +212,11 @@ class YouTubeClient:
     ) -> None:
         self.client = client
         self.store = store
+        for base in (api_base, upload_base):
+            if not yt.trusted_endpoint(base):
+                raise YouTubeNotConfiguredError(
+                    "The YouTube API address must be on googleapis.com (or this computer)."
+                )
         self._timeout = timeout_s
         self._chunk = max(_CHUNK_MULTIPLE, chunk_bytes - chunk_bytes % _CHUNK_MULTIPLE)
         self._api = api_base.rstrip("/")
@@ -295,8 +301,9 @@ class YouTubeClient:
         if saved:
             try:
                 data = urllib.parse.urlencode({"token": saved["refresh_token"]}).encode()
-                req = urllib.request.Request(
-                    REVOKE_URI,
+                revoke = self.client.token_uri.rsplit("/", 1)[0] + "/revoke"
+                req = urllib.request.Request(  # noqa: S310
+                    revoke,
                     data=data,
                     headers={"Content-Type": "application/x-www-form-urlencoded"},
                 )

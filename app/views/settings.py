@@ -242,7 +242,9 @@ st.markdown(
 )
 
 tab_storage, tab_processing, tab_ai, tab_youtube, tab_diag = st.tabs(
-    ["Storage", "Processing", "AI writing and review", "YouTube", "Diagnostics"]
+    ["Storage", "Processing", "AI writing and review", "YouTube", "Diagnostics"],
+    key="settings-tab",
+    on_change="rerun",
 )
 
 with tab_storage:

@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict, dataclass
+from urllib.parse import urlparse
 
 SCOPES = (
     "https://www.googleapis.com/auth/youtube.upload",
@@ -54,6 +55,7 @@ KIND_NO_CHANNEL = "no_channel"
 KIND_REJECTED = "rejected"
 KIND_NETWORK = "network"
 KIND_OTHER = "other"
+KIND_CANCELLED = "cancelled"
 
 APPROVAL_TEXT = "I approve this upload"
 
@@ -163,3 +165,20 @@ def classify_api_error(status: int, body: bytes) -> tuple[str, str]:
     if status >= 500:
         return KIND_NETWORK, f"YouTube had a server problem (HTTP {status}). Retry later."
     return KIND_OTHER, f"YouTube answered HTTP {status}. {text}".strip()
+
+
+_GOOGLE_SUFFIXES = (".googleapis.com", ".google.com")
+_LOOPBACK = ("127.0.0.1", "localhost", "::1")
+
+
+def trusted_endpoint(url: str) -> bool:
+    """Whether credentials may be sent to this address.
+
+    Only HTTPS addresses on Google domains, or plain HTTP on this computer (for local test
+    stubs). Anything else could leak a token, so it is refused.
+    """
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme == "https":
+        return host == "google.com" or host.endswith(_GOOGLE_SUFFIXES)
+    return parsed.scheme == "http" and host in _LOOPBACK

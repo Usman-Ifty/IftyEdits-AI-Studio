@@ -166,6 +166,7 @@ class YouTubeRepository:
         now = utc_now()
         self.conn.execute(
             "UPDATE youtube_uploads SET status = 'uploaded', youtube_video_id = ?, "
+            "bytes_sent = COALESCE(json_extract(details, '$.file_size'), bytes_sent), "
             "finished_at = ?, updated_at = ? WHERE id = ? AND status = 'uploading'",
             (video_id, now, now, upload_id),
         )
