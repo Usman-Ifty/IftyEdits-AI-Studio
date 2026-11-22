@@ -34,6 +34,13 @@ Install Ollama yourself and pull a model; the studio never installs or downloads
 `http://127.0.0.1:11434/v1`) in `.env` and restart. "Check local connection" in Settings tests
 that the endpoint answers; it sends no prompt.
 
+## Status vs. test (Settings)
+
+Four states are kept apart: key/model **configured**, endpoint **reachable** ("Check local
+connection", also lists installed models), a **live answer** ("Test Claude" / "Test local model",
+one tiny synthetic request, no project data; the Claude test uses a few real tokens), and
+**unavailable** (the reason is shown). Pills say "not tested" until you run a test.
+
 ## Usage and limits
 
 Settings shows this month's requests and tokens per provider, an estimated Claude cost, and the

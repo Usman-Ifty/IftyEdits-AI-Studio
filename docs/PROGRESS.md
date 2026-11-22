@@ -782,3 +782,11 @@ docs/AI_PROVIDERS.md and docs/PHASE_6_10_VALIDATION.md.
   installed, so only stub-server and fake-model tests ran.
 
 Next: owner adds `ANTHROPIC_API_KEY` to `.env`, then one controlled real call (see validation doc).
+
+## Audit and stabilization (2026-11-22)
+
+See docs/FULL_PROJECT_AUDIT.md, UI_AUDIT.md, END_TO_END_TESTING.md, GTA6_CLIPPING_EXPERIMENT.md.
+Work committed locally on `phase/06-publishing-ai-providers`; GitHub push blocked (403, account
+lacks write access). Added Claude/local connection tests and clearer statuses. One real Short
+produced from a local file. No live AI call. Phase 6 code is complete; closing it still needs a live
+provider check and a push.
