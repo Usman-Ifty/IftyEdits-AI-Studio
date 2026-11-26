@@ -287,7 +287,10 @@ def _progress(settings: Settings, record: UploadRecord) -> None:
         min(1.0, record.bytes_sent / total),
         text=f"{human_size(record.bytes_sent)} of {human_size(total)}",
     )
-    st.caption("Needs the studio's background worker (`iftyedits ui` starts one).")
+    st.caption(
+        "Needs the studio's background worker. If none is running: "
+        "`uv run iftyedits ui --start-worker`."
+    )
     label = "Cancel before it starts" if record.status == yt.APPROVED else "Cancel upload"
     if st.button(label, key=f"yt-cancel-{record.id}"):
         _act(settings, lambda s: s.cancel(record.id), "Cancel requested.")

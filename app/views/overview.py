@@ -97,8 +97,9 @@ if workers:
     st.markdown(theme.pill("Worker running", "good"), unsafe_allow_html=True)
 else:
     st.warning(
-        "No background worker is running, so queued jobs will wait. "
-        "Start one with `uv run iftyedits worker`, or launch the app with `uv run iftyedits ui`."
+        "No background worker is running, so queued jobs will wait. Start one with "
+        "`uv run iftyedits worker`, or `uv run iftyedits ui --start-worker` while this "
+        "dashboard stays open."
     )
 if failed:
     st.error(f"{failed} video(s) have a failed preparation stage. See My Videos.")

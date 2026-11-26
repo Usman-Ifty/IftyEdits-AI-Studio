@@ -121,7 +121,8 @@ st.markdown(
     "- **Rights:** you are responsible for having permission to reuse a video; the "
     "studio cannot judge copyright, fair use or platform rules.\n"
     "- **Common problems:** *no worker running* means start `uv run iftyedits worker` "
-    "(the `ui` command starts one for you); *private or age-restricted video* cannot "
+    "(`iftyedits ui` starts one with a new dashboard; add `--start-worker` if the "
+    "dashboard is already running); *private or age-restricted video* cannot "
     "be fetched; *no suggestions* usually means little speech or a very low minimum "
     "score setting."
 )
