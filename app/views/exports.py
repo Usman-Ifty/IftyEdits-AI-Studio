@@ -117,15 +117,13 @@ with tab_files:
                 st.markdown(
                     theme.gallery_card(
                         title,
-                        f"{video.original_filename if video else f'video #{video_id}'}",
+                        f"{video.original_filename if video else f'video #{video_id}'} · {meta}",
                         theme.pill("Rendered", "good")
                         + " "
                         + theme.pill(
                             readiness_by_project[project_id].label,
                             readiness_by_project[project_id].tone,
-                        )
-                        + " "
-                        + theme.pill(meta, "muted"),
+                        ),
                     ),
                     unsafe_allow_html=True,
                 )

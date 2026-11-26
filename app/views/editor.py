@@ -653,7 +653,8 @@ def render_status(project_id: int, current: ShortProject, source: SourceInfo) ->
                 f"{human_size(done.size_bytes or 0)}, "
                 f"{'with audio' if done.has_audio else 'no audio'}, encoder {done.encoder}"
             )
-            st.video(str(done.output_path))
+            _, middle, _ = st.columns([1, 1, 1])  # a 9:16 video at full width is too tall
+            middle.video(str(done.output_path))
     with st.expander("All renders of this Short"):
         st.dataframe([render_row(r) for r in renders], hide_index=True, width="stretch")
     del current, source

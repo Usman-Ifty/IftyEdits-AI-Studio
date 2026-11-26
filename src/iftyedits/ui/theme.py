@@ -44,7 +44,7 @@ div[data-testid="stVerticalBlockBorderWrapper"] { border-radius: 14px; }
 .ie-hero p { margin: 0; color: #B6BFD6; max-width: 46rem; }
 .ie-pill {
   display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: .78rem;
-  font-weight: 600; border: 1px solid transparent; white-space: nowrap;
+  font-weight: 600; border: 1px solid transparent; max-width: 100%; overflow-wrap: anywhere;
 }
 .ie-card {
   border: 1px solid #243049; border-radius: 14px; padding: 14px 16px; margin-bottom: 10px;
