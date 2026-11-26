@@ -826,3 +826,12 @@ numbers, real upload. Phase 7 acceptance is met locally; real-Google confirmatio
 transcript becomes current only when a transcription actually runs. Claude support already existed
 (Phase 6.10); it still needs `ANTHROPIC_API_KEY` and has not been tried against the real API.
 Verified with unit tests and a start/stop check using real processes on scratch data.
+
+## Release readiness pass (2026-11-27)
+
+Verified on this Mac: full suite with FFmpeg 1305 passed, 1 skipped; the real-model test passed with
+`tiny` and `small`; a clean clone installed from the lock file; import to captioned 1080x1920 export
+ran on self-made speech with the source unchanged; missing FFmpeg, missing model, low disk and
+corrupt media were refused with clear messages; OSV reported no known vulnerabilities for the 68
+locked packages. Real Google: sign-in, channel read and token refresh worked; no upload yet.
+Added `docs/RELEASE_CHECKLIST.md` and corrected worker hints in the UI. Open items are listed there.
