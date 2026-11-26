@@ -1,21 +1,144 @@
 # IftyEdits AI Studio
 
 Local-first AI studio that turns long-form video into YouTube Shorts.
-Built for Apple Silicon (M1 Max). Development rules live in [CLAUDE.md](CLAUDE.md).
+Built for Apple Silicon (M1 Max). Development rules live in [CLAUDE.md](CLAUDE.md). The phased product plan is in
+[docs/ROADMAP.md](docs/ROADMAP.md), status in [docs/PROGRESS.md](docs/PROGRESS.md) and
+decisions in [docs/DECISIONS.md](docs/DECISIONS.md). How to use the app:
+[docs/USER_GUIDE.md](docs/USER_GUIDE.md). How to run checks and tests:
+[docs/TESTING.md](docs/TESTING.md).
+
+**Status:** Phases 1A (import), 1B (media preparation and jobs) and 1C (transcription) are
+implemented on local branches and awaiting review; see [docs/PROGRESS.md](docs/PROGRESS.md).
+Videos are imported into a protected vault, prepared in a background worker (16 kHz audio,
+720p proxy, thumbnail) and transcribed locally with faster-whisper into searchable,
+timestamped transcripts that export to SRT, WebVTT, text and JSON. Phase 2 (clip
+intelligence, implemented on `feat/phase-2-clip-intelligence`, awaiting review) analyses a
+transcript with loudness and scene changes, proposes sentence-aligned clips and ranks them
+with an explainable algorithmic score on the **Clips** page. Nothing is rendered yet.
 
 ## Requirements
 
-- macOS on Apple Silicon
+- macOS on Apple Silicon (Linux works for development and CI)
 - [uv](https://docs.astral.sh/uv/) (manages Python 3.12; system Python is not used)
 - FFmpeg and ffprobe on `PATH` (Homebrew)
+- Disk space for speech models (74 MB to 2.9 GB each, downloaded only on request)
 
 ## Setup
 
 ```bash
 uv sync
 cp .env.example .env
-uv run python scripts/check_env.py
+uv run iftyedits check
+uv run iftyedits models download small   # optional now; also available in the UI
 ```
+
+## Running
+
+Start the dashboard and a background worker together (binds to `127.0.0.1:8501`):
+
+```bash
+uv run iftyedits ui
+```
+
+The port is checked first, and the worker starts only after the dashboard is healthy. If a healthy
+dashboard already answers on the port, nothing is started: the command reports whether a worker is
+active and how many jobs are waiting. `uv run iftyedits ui --start-worker` then starts a worker
+only (never a second one), which begins processing the queued jobs.
+
+Or run them separately, in two terminals:
+
+```bash
+uv run iftyedits worker
+uv run streamlit run app/Home.py
+```
+
+`.streamlit/config.toml` binds Streamlit to `127.0.0.1` and disables usage statistics.
+
+### CLI
+
+| Command | What it does |
+|---|---|
+| `iftyedits import PATH... [-r]` | Import files or folders now, in this process |
+| `iftyedits enqueue PATH... [-r] [--process]` | Queue files or folders for the worker; `--process` also prepares media |
+| `iftyedits worker [--once]` | Run queued jobs (imports, preparation, transcription, downloads, production) |
+| `iftyedits fetch URL [--process]` | Queue a download of a YouTube link (only for videos you may use) |
+| `iftyedits produce SOURCE [--clips N] [--min-score S] [--captions P] [--force]` | Queue the whole link-to-Shorts pipeline for a link, video id or SHA-256 prefix |
+| `iftyedits process VIDEO... \| --all [--stage S] [--force]` | Queue media preparation (audio, proxy, thumbnail) |
+| `iftyedits models [list\|download NAME\|verify NAME]` | List, download or verify speech models |
+| `iftyedits transcribe VIDEO... \| --all [--model M] [--language L] [--force]` | Queue transcription |
+| `iftyedits transcript VIDEO [--format txt\|srt\|vtt\|json] [--save]` | Print or save the current transcript |
+| `iftyedits analyze VIDEO... \| --all [--force]` | Queue clip analysis (suggested Shorts) |
+| `iftyedits clips list\|show\|favorite\|reject\|clear VIDEO [REF]` | Review ranked clip suggestions |
+| `iftyedits search QUERY [--video VIDEO] [--limit N]` | Search current transcripts |
+| `iftyedits jobs [--limit N] [--active]` | List jobs |
+| `iftyedits cancel JOB_ID...` | Cancel queued jobs or stop running ones |
+| `iftyedits artifacts VIDEO [--verify]` | Show preparation stages and generated files |
+| `iftyedits list [--limit N]` | List imported videos (default 100) |
+| `iftyedits show VIDEO [--verify]` | Show one video; `--verify` re-hashes the vault copy |
+| `iftyedits reconcile` | Record vault files that have no database row |
+| `iftyedits check` | Verify ffprobe, ffmpeg, faster-whisper, models, database and workers |
+| `iftyedits ui [--port N] [--address A] [--no-worker \| --start-worker]` | Start Streamlit plus a worker; binds to `127.0.0.1:8501` by default. With a dashboard already running, starts nothing unless `--start-worker` is given |
+
+`VIDEO` is a video ID or a SHA-256 prefix of at least 6 characters.
+`-r` / `--recursive` includes subfolders. Every entry that is not imported (symbolic link,
+hidden file, other extension, subfolder without `-r`) is listed with its reason.
+
+## Short editor
+
+**Clips → Edit as a Short** opens an editor to trim a suggestion, frame it for 9:16, edit
+captions, adjust look and sound, render a preview and export an H.264/AAC MP4 (1080x1920,
+VideoToolbox when available, libx264 otherwise) to `data/exports/shorts/`. Captions are drawn
+with Pillow because the installed FFmpeg has no text filters. Planned, not built: face-aware
+transitions, multi-clip timelines, emphasis words. See D24 and D25 in
+[docs/DECISIONS.md](docs/DECISIONS.md).
+
+## One-click production (Phase 4)
+
+Paste a YouTube link on **Import** (tick that you may use the video) and press **Produce
+Shorts**, or run `iftyedits produce <link>`. One job downloads the video, prepares media,
+transcribes, finds the best moments, picks a steady crop and exports each chosen clip as its
+own 1080x1920 MP4 in `data/exports/shorts/<title>-v<id>/`. Each file is checked with ffprobe.
+Re-running reuses finished stages and never overwrites an export. Needs a running worker
+(`iftyedits ui` starts one). **Finished Shorts** lists the files; **Guides & Help** walks through it.
+`--review` lists the picks without rendering; `--min-length` and `--max-length` bound clip
+length. Weak clips are never added to reach the count. When the picture is wide the crop can
+follow the busiest part of the scene smoothly (it does not recognise faces); a crop you set by
+hand always wins. Caption presets: Classic, Boxed, Highlight, Minimal, Impact, Studio, Clean,
+Punchy, Cinematic, Mobile; optional colouring of key words.
+Downloading does not grant rights: you are responsible for being allowed to use each video.
+
+## How import works
+
+1. The path is resolved and checked: a regular file with an allowed extension, outside `data/`.
+2. ffprobe reads the source. Files without a video stream are rejected before any copy.
+3. If stored content has the same size, the source is hashed. Identical content
+   (any filename or extension) is recorded as another source of the existing video.
+4. Otherwise the file is copied once into `data/staging/` while its SHA-256 is computed,
+   checked for changes during the copy, made read-only and moved into
+   `data/originals/<sha[:2]>/<sha><ext>`.
+5. The vault copy is probed and the video, its streams and its source path are
+   written to SQLite in one transaction.
+
+The source file is only ever opened for reading. It is never modified, moved, deleted or linked.
+If the database write fails, the vault copy is kept and `iftyedits reconcile` records it later.
+Interrupted copies are removed from `data/staging/`; the worker requeues interrupted jobs.
+
+The Streamlit pages only queue jobs. Copying, probing, FFmpeg work, model downloads and
+transcription run in the worker process.
+
+## How transcription works
+
+1. The job checks that the video has an audio stream and that the model is downloaded
+   (transcription never downloads anything).
+2. It uses the 16 kHz mono WAV from media preparation, regenerating it from the original if
+   it is missing or damaged, and checks the WAV header.
+3. faster-whisper (CTranslate2, CPU, int8) transcribes it with voice-activity detection and
+   word timestamps, reporting progress per segment; cancellation is checked between segments.
+4. Timings are validated and normalised, then the transcript, its segments and words are
+   stored in SQLite in one transaction, with an FTS5 search index. The same settings reuse the
+   stored transcript; different settings add a version, and one version per video is current.
+
+Details: decisions D15 to D18 in [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## Quality checks
 
@@ -23,41 +146,94 @@ uv run python scripts/check_env.py
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy
-uv run pytest
+uv run pytest                     # all tests (FFmpeg tests need ffmpeg installed)
+uv run pytest -m "not ffmpeg and not slow"   # fast unit tests only
+IFTYEDITS_RUN_MODEL_TESTS=1 uv run pytest -m model   # real speech model (needs `models download tiny`)
 ```
 
 ## Layout
 
 ```
-src/iftyedits/   application package
-  core/          domain models and errors (no I/O)
-  storage/       SQLite and file storage, original-media vault
-  adapters/      FFmpeg, YouTube, LLM wrappers
-  services/      one module per pipeline stage
-  pipeline/      job runner
-app/             Streamlit dashboard
+src/iftyedits/
+  config.py      settings (env vars and .env)
+  cli.py         `iftyedits` command
+  core/          domain models, protocols and errors (no I/O)
+  storage/       SQLite (db.py, migrations/), video repository, originals vault
+  adapters/      ffprobe, ffmpeg, faster-whisper, speech model store
+  services/      ingest, media preparation, transcription, subtitle exports, clip analysis
+  pipeline/      job queue and worker
+  ui/            display formatting for Streamlit
+app/             Streamlit dashboard (Home.py, views/)
 tests/           unit/ and integration/
 scripts/         developer utilities
 data/            local data, git-ignored
-  originals/     read-only imported copies
-  derived/       generated audio, proxies, clips
-  exports/       finished Shorts
-  db/            SQLite database
-models/          model weights, git-ignored
+  originals/     read-only vault
+  staging/       in-progress copies
+  derived/       generated audio, proxies, thumbnails
+  exports/       saved transcript exports (finished Shorts in later phases)
+  db/            SQLite database (including transcripts)
+models/          speech models (faster-whisper/<name>/), git-ignored
 ```
-
-## Original media protection
-
-Imported videos are copied into `data/originals/` as independent, read-only files
-named by their SHA-256 hash. The source file is never modified, moved or linked.
-All generated files go to `data/derived/` or `data/exports/`.
 
 ## Configuration
 
-See [.env.example](.env.example).
+See [.env.example](.env.example). Precedence: environment > `.env` > defaults.
+Relative paths resolve against `IFTYEDITS_HOME`, or the current directory if unset.
 
 | Variable | Default | Purpose |
 |---|---|---|
+| `IFTYEDITS_HOME` | current directory | Project root for `.env` and relative paths |
 | `IFTYEDITS_DATA_DIR` | `./data` | Root of local data |
 | `IFTYEDITS_MODELS_DIR` | `./models` | Model weights cache |
 | `IFTYEDITS_LOG_LEVEL` | `INFO` | Log level |
+| `IFTYEDITS_FFPROBE_PATH` | `ffprobe` | ffprobe executable |
+| `IFTYEDITS_PROBE_TIMEOUT_S` | `60` | ffprobe timeout per file |
+| `IFTYEDITS_FFMPEG_PATH` | `ffmpeg` | ffmpeg executable |
+| `IFTYEDITS_FFMPEG_TIMEOUT_S` | `21600` | Limit for one FFmpeg command |
+| `IFTYEDITS_PROXY_ENCODER` | `auto` | `auto`, `h264_videotoolbox` or `libx264` |
+| `IFTYEDITS_MIN_FREE_BYTES` | `2147483648` | Free space that must remain after an import |
+| `IFTYEDITS_VIDEO_EXTENSIONS` | `.mp4,.m4v,.mov,.mkv,.webm,.avi,.mts,.m2ts,.mxf` | Accepted extensions |
+| `IFTYEDITS_TRANSCRIPTION_MODEL` | `small` | Default speech model |
+| `IFTYEDITS_TRANSCRIPTION_LANGUAGE` | `auto` | `auto` or a language code such as `en` |
+| `IFTYEDITS_TRANSCRIPTION_COMPUTE_TYPE` | `int8` | `int8`, `int8_float32` or `float32` |
+| `IFTYEDITS_TRANSCRIPTION_CPU_THREADS` | `0` | CPU threads (0 = faster-whisper default) |
+| `IFTYEDITS_TRANSCRIPTION_BEAM_SIZE` | `5` | Beam size (1 to 10) |
+| `IFTYEDITS_TRANSCRIPTION_VAD` | `true` | Skip silence with voice-activity detection |
+| `IFTYEDITS_TRANSCRIPTION_WORD_TIMESTAMPS` | `true` | Store word timings |
+| `IFTYEDITS_TRANSCRIPTION_TIMEOUT_S` | `21600` | Limit for one transcription job |
+| `IFTYEDITS_CLIP_MIN_S` / `_TARGET_S` / `_MAX_S` | `15` / `40` / `60` | Preferred clip length in seconds (min <= target <= max) |
+| `IFTYEDITS_CLIP_MAX_CANDIDATES` | `20` | Suggestions kept per video |
+| `IFTYEDITS_CLIP_MAX_OVERLAP` | `0.5` | Largest overlap allowed between two suggestions (0 to 1) |
+| `IFTYEDITS_CLIP_SCENE_THRESHOLD` | `0.3` | FFmpeg scene-change sensitivity |
+| `IFTYEDITS_CLIP_USE_AUDIO` / `_USE_SCENES` | `true` | Use loudness and scene changes as evidence |
+| `IFTYEDITS_URL_MAX_DURATION_S` | `14400` | Refuse links to videos longer than this |
+| `IFTYEDITS_URL_DOWNLOAD_TIMEOUT_S` | `3600` | Limit for one download |
+| `IFTYEDITS_URL_MAX_FILESIZE_MB` | `4096` | Largest download accepted |
+| `IFTYEDITS_AI_PROVIDER` | `ollama` | `ollama`, `claude` or `hybrid` (Settings can override) |
+| `ANTHROPIC_API_KEY` | empty | Claude API key; hidden, never stored in the database |
+| `IFTYEDITS_CLAUDE_MODEL` | `claude-sonnet-5-5` | Claude model id |
+| `IFTYEDITS_ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | Claude API address |
+| `IFTYEDITS_CLAUDE_TIMEOUT_S` / `IFTYEDITS_AI_MAX_RETRIES` | `120` / `2` | Claude time limit and bounded retries |
+| `IFTYEDITS_AI_MAX_OUTPUT_TOKENS` | `2048` | Largest reply requested per call |
+| `IFTYEDITS_AI_MONTHLY_BUDGET_USD` / `_TOKEN_LIMIT` | `0` | Monthly Claude limits (0 = none) |
+| `IFTYEDITS_AI_BUDGET_HARD` | `false` | Block Claude calls at the limit instead of only warning |
+| `IFTYEDITS_CLAUDE_PRICE_INPUT_PER_MTOK` / `_OUTPUT_` | empty | USD per million tokens, needed for USD limits and cost estimates |
+| `IFTYEDITS_LLM_MODEL` | empty | Model name for AI writing and review; empty turns AI off |
+| `IFTYEDITS_LLM_BASE_URL` | `http://127.0.0.1:11434/v1` | OpenAI-compatible endpoint (default local Ollama) |
+| `IFTYEDITS_LLM_API_KEY` | empty | Optional bearer key, never shown or logged |
+| `IFTYEDITS_LLM_TIMEOUT_S` | `180` | Per-request time limit |
+| `IFTYEDITS_LLM_MAX_TRANSCRIPT_CHARS` | `12000` | Transcript characters sent per request |
+
+## Optional YouTube upload (Phase 7)
+
+Connect a YouTube account in Settings (optional) and upload a confirmed Short as **Private or
+Unlisted** after typing an explicit approval of the exact details. The studio never publishes or
+schedules. Manual export remains available. Setup, limits and security: [docs/YOUTUBE.md](docs/YOUTUBE.md).
+Variables: `IFTYEDITS_YOUTUBE_CLIENT_SECRETS`, `IFTYEDITS_YOUTUBE_TOKEN_PATH`,
+`IFTYEDITS_YOUTUBE_CHUNK_MB`, `IFTYEDITS_YOUTUBE_DAILY_UPLOAD_LIMIT`.
+
+## Upload preparation (Phase 6)
+
+Per-Short metadata, advisory content review, source rights tracking and a readiness checklist,
+inside the Clip Editor. Optional AI uses a local model (Ollama), Claude (API key) or both (hybrid);
+see [docs/AI_PROVIDERS.md](docs/AI_PROVIDERS.md). Nothing is uploaded. See [docs/PUBLISHING.md](docs/PUBLISHING.md).

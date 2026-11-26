@@ -81,3 +81,6 @@ models/**
 
 # ---------- Claude local settings ----------
 .claude/settings.local.json
+
+# ---------- Streamlit local secrets ----------
+.streamlit/secrets.toml

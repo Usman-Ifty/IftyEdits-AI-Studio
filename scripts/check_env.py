@@ -53,6 +53,18 @@ def main() -> int:
             if not _has_word(filters, name):
                 warnings.append(f"FFmpeg filter missing (caption burn-in): {name}")
 
+    try:
+        import ctranslate2
+        import faster_whisper
+    except ImportError:
+        print("whisper     MISSING")
+        failures.append("faster-whisper is not installed (run `uv sync`)")
+    else:
+        print(
+            f"whisper     faster-whisper {faster_whisper.__version__}, "
+            f"ctranslate2 {ctranslate2.__version__} (CPU)"
+        )
+
     free_gb = shutil.disk_usage(ROOT).free / 1024**3
     print(f"disk free   {free_gb:.0f} GiB")
     if free_gb < MIN_FREE_GB:
