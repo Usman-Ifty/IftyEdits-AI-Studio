@@ -754,9 +754,7 @@ def _describe_jobs(jobs: list[Job]) -> str:
 
 
 def _spawn_worker(env: dict[str, str], home: Path) -> subprocess.Popen[bytes]:
-    return subprocess.Popen(
-        [sys.executable, "-m", "iftyedits.cli", "worker"], env=env, cwd=home
-    )
+    return subprocess.Popen([sys.executable, "-m", "iftyedits.cli", "worker"], env=env, cwd=home)
 
 
 def _stop_child(child: subprocess.Popen[bytes] | None, timeout_s: float) -> None:
