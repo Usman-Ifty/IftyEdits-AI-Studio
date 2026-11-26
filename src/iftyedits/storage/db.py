@@ -30,6 +30,14 @@ def connect(path: Path) -> sqlite3.Connection:
     return conn
 
 
+def open_read_only(path: Path) -> sqlite3.Connection:
+    """Open an existing database for reading: no writes and no migrations."""
+    uri = f"{path.resolve().as_uri()}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True, timeout=10.0, isolation_level=None)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
 def open_database(path: Path) -> sqlite3.Connection:
     """Connect and apply pending migrations."""
     conn = connect(path)

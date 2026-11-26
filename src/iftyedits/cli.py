@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import argparse
+import http.client
 import logging
 import os
 import signal
+import socket
+import sqlite3
 import subprocess
 import sys
 import threading
+import time
 from collections.abc import Sequence
 from contextlib import closing
 from pathlib import Path
@@ -22,7 +26,14 @@ from iftyedits.adapters.model_store import build_model_store
 from iftyedits.config import Settings, project_home
 from iftyedits.core.clip_models import ClipCandidate, ClipDecision
 from iftyedits.core.errors import IftyEditsError
-from iftyedits.core.models import ALL_STAGES, CancelOutcome, ModelState, Stage
+from iftyedits.core.models import (
+    ALL_STAGES,
+    CancelOutcome,
+    Job,
+    JobStatus,
+    ModelState,
+    Stage,
+)
 from iftyedits.core.scoring import CATEGORY_LABELS, SCORING_VERSION
 from iftyedits.core.shorts import CAPTION_PRESETS
 from iftyedits.core.sources import PERMISSION_NOTICE, parse_video_url
@@ -33,7 +44,7 @@ from iftyedits.services.production import ProductionOptions
 from iftyedits.services.subtitles import EXPORT_FORMATS, export
 from iftyedits.services.transcription import options_from_settings, transcription_blocker
 from iftyedits.storage.clips import ClipRepository
-from iftyedits.storage.db import open_database, schema_version
+from iftyedits.storage.db import open_database, open_read_only, schema_version
 from iftyedits.storage.originals import ProgressCallback, assert_safe_output_path, sha256_file
 from iftyedits.storage.processing import ProcessingRepository
 from iftyedits.storage.transcripts import TranscriptRepository
@@ -71,6 +82,9 @@ LOCALHOST = "127.0.0.1"
 EXIT_OK = 0
 EXIT_FAILED = 1
 EXIT_USAGE = 2
+HEALTH_PATH = "/_stcore/health"
+DASHBOARD_START_TIMEOUT_S = 60.0
+DASHBOARD_POLL_S = 0.25
 
 
 def _configure_logging(settings: Settings) -> None:
@@ -686,19 +700,152 @@ def cmd_check(settings: Settings, args: argparse.Namespace) -> int:
     return EXIT_OK if ok else EXIT_FAILED
 
 
+def _connect_host(address: str) -> str:
+    """The address to connect to for a server bound to ``address``."""
+    return {"0.0.0.0": LOCALHOST, "::": "::1"}.get(address, address)  # noqa: S104 - lookup only
+
+
+def port_in_use(address: str, port: int) -> bool:
+    """True if something already listens on the port, or it cannot be bound."""
+    try:
+        with socket.create_connection((_connect_host(address), port), timeout=1.0):
+            return True
+    except OSError:
+        pass
+    family = socket.AF_INET6 if ":" in address else socket.AF_INET
+    with socket.socket(family, socket.SOCK_STREAM) as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            probe.bind((address, port))
+        except OSError:
+            return True
+    return False
+
+
+def dashboard_healthy(address: str, port: int, timeout_s: float = 2.0) -> bool:
+    """True if a Streamlit server answers its health check on the port (no proxy is used)."""
+    connection = http.client.HTTPConnection(_connect_host(address), port, timeout=timeout_s)
+    try:
+        connection.request("GET", HEALTH_PATH)
+        response = connection.getresponse()
+        return response.status == 200 and response.read(16).strip() == b"ok"
+    except (OSError, http.client.HTTPException):
+        return False
+    finally:
+        connection.close()
+
+
+def _queue_state(settings: Settings) -> tuple[list[str], list[Job]] | None:
+    """``(live workers, queued jobs)`` read without writing, or None if unreadable."""
+    if not settings.db_path.is_file():
+        return [], []
+    try:
+        with closing(open_read_only(settings.db_path)) as conn:
+            queue = JobQueue(conn)
+            queued = [j for j in queue.list_active() if j.status is JobStatus.QUEUED]
+            return queue.live_workers(), queued
+    except sqlite3.Error:
+        logger.warning("Could not read the job database", exc_info=True)
+        return None
+
+
+def _describe_jobs(jobs: list[Job]) -> str:
+    return ", ".join(f"#{j.id} {j.kind}" for j in sorted(jobs, key=lambda j: j.id))
+
+
+def _spawn_worker(env: dict[str, str], home: Path) -> subprocess.Popen[bytes]:
+    return subprocess.Popen(
+        [sys.executable, "-m", "iftyedits.cli", "worker"], env=env, cwd=home
+    )
+
+
+def _stop_child(child: subprocess.Popen[bytes] | None, timeout_s: float) -> None:
+    if child is None or child.poll() is not None:
+        return
+    child.terminate()
+    try:
+        child.wait(timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        child.kill()
+
+
+def _raise_interrupt(_signum: int, _frame: object) -> None:
+    raise KeyboardInterrupt  # SIGTERM shuts the children down like Ctrl+C
+
+
+def _wait_for_dashboard(server: subprocess.Popen[bytes], address: str, port: int) -> bool:
+    """Wait until our dashboard answers. False if it exits or never becomes healthy."""
+    deadline = time.monotonic() + DASHBOARD_START_TIMEOUT_S
+    while server.poll() is None:
+        if dashboard_healthy(address, port) and server.poll() is None:
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(DASHBOARD_POLL_S)
+    return False
+
+
+def _ui_port_taken(
+    settings: Settings, args: argparse.Namespace, env: dict[str, str], home: Path
+) -> int:
+    """The port is occupied: never start a second dashboard, and a worker only on request."""
+    url = f"http://{args.address}:{args.port}"
+    if not dashboard_healthy(args.address, args.port):
+        print(
+            f"Port {args.port} on {args.address} cannot be used and no healthy dashboard "
+            "answers there. Nothing was started. Free the port or choose one with --port.",
+            file=sys.stderr,
+        )
+        return EXIT_FAILED
+    state = _queue_state(settings)
+    if state is None:
+        print(
+            f"Dashboard already running at {url}. The job database could not be read, "
+            "so nothing was started.",
+            file=sys.stderr,
+        )
+        return EXIT_FAILED if args.start_worker else EXIT_OK
+    workers, queued = state
+    if workers:
+        print(f"Dashboard and worker already running at {url}. Nothing was started.")
+        return EXIT_OK
+    if not args.start_worker:
+        print(
+            f"Dashboard already running at {url}. No worker is active, so "
+            f"{len(queued)} queued job(s) will wait. Nothing was started."
+        )
+        if not args.no_worker:
+            print("To process queued jobs, run `iftyedits ui --start-worker`.")
+        return EXIT_OK
+    print(f"Dashboard already running at {url}. Starting a worker only.")
+    if queued:
+        print(f"It will process {len(queued)} queued job(s): {_describe_jobs(queued)}")
+    worker: subprocess.Popen[bytes] | None = None
+    signal.signal(signal.SIGTERM, _raise_interrupt)
+    try:
+        worker = _spawn_worker(env, home)
+        return worker.wait()
+    except KeyboardInterrupt:
+        return EXIT_OK
+    finally:
+        _stop_child(worker, 30)
+
+
 def cmd_ui(settings: Settings, args: argparse.Namespace) -> int:
-    """Start Streamlit on localhost, plus a background worker unless disabled."""
+    """Start Streamlit on localhost, then a background worker unless disabled.
+
+    The port is checked first, and the worker starts only after the dashboard is healthy, so a
+    failed launch never claims a job. With a dashboard already running, nothing is started
+    unless ``--start-worker`` is given and no worker is active.
+    """
     home = project_home()
     app = home / "app" / "Home.py"
     if not app.is_file():
         print(f"Streamlit app not found at {app}. Run from the project root.", file=sys.stderr)
         return EXIT_USAGE
     env = {**os.environ, "IFTYEDITS_HOME": str(home)}
-    worker: subprocess.Popen[bytes] | None = None
-    if not args.no_worker:
-        worker = subprocess.Popen(
-            [sys.executable, "-m", "iftyedits.cli", "worker"], env=env, cwd=home
-        )
+    if port_in_use(args.address, args.port):
+        return _ui_port_taken(settings, args, env, home)
     ui_args = [
         sys.executable,
         "-m",
@@ -715,29 +862,27 @@ def cmd_ui(settings: Settings, args: argparse.Namespace) -> int:
         "false",
     ]
     server: subprocess.Popen[bytes] | None = None
-
-    def _stop(_signum: int, _frame: object) -> None:
-        raise KeyboardInterrupt  # SIGTERM shuts the children down like Ctrl+C
-
-    signal.signal(signal.SIGTERM, _stop)
+    worker: subprocess.Popen[bytes] | None = None
+    signal.signal(signal.SIGTERM, _raise_interrupt)
     try:
         server = subprocess.Popen(ui_args, env=env, cwd=home)  # noqa: S603 - fixed argv
+        if not args.no_worker:
+            if not _wait_for_dashboard(server, args.address, args.port):
+                print("The dashboard did not start, so no worker was started.", file=sys.stderr)
+                return server.poll() or EXIT_FAILED
+            state = _queue_state(settings)
+            if state is not None and state[0]:
+                print("A worker is already active; not starting another.")
+            else:
+                if state is not None and state[1]:
+                    print(f"Starting a worker for queued job(s): {_describe_jobs(state[1])}")
+                worker = _spawn_worker(env, home)
         return server.wait()
     except KeyboardInterrupt:
         return EXIT_OK
     finally:
-        if server is not None and server.poll() is None:
-            server.terminate()
-            try:
-                server.wait(timeout=20)
-            except subprocess.TimeoutExpired:
-                server.kill()
-        if worker is not None:
-            worker.terminate()
-            try:
-                worker.wait(timeout=30)
-            except subprocess.TimeoutExpired:
-                worker.kill()
+        _stop_child(server, 20)
+        _stop_child(worker, 30)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -874,7 +1019,13 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("ui", help="start the Streamlit dashboard and a worker")
     p.add_argument("--port", type=int, default=8501)
     p.add_argument("--address", default=LOCALHOST, help="bind address (default 127.0.0.1)")
-    p.add_argument("--no-worker", action="store_true", help="do not start a worker")
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--no-worker", action="store_true", help="do not start a worker")
+    mode.add_argument(
+        "--start-worker",
+        action="store_true",
+        help="if the dashboard is already running and no worker is active, start a worker",
+    )
     p.set_defaults(func=cmd_ui)
     return parser
 
