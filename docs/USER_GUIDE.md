@@ -69,24 +69,22 @@ folder (or set `IFTYEDITS_HOME`); from another folder they open a different, emp
 
 ## 3. The dashboard
 
-The sidebar has five pages: Overview, Import, Library, Transcripts and Jobs.
+### Navigation
 
-### Navigation (Phase 5)
-
-The sidebar has eight sections in workflow order: **Dashboard**, **Create Shorts**, **My Videos**,
-**Clip Editor**, **Finished Shorts**, **Processing Queue**, **Settings** and **Guides & Help**.
-Nothing was removed: **My Videos** holds the video list (Videos tab) and Transcripts; **Clip
-Editor** holds Review candidates and Edit Short. *Edit as a Short* on a candidate opens it in
-the Edit Short step. A seven-step tracker (Paste link, Import video, Analyze, Generate clips,
-Review candidates, Edit Short, Export) shows how far your newest video has got.
+The sidebar lists the everyday sections in workflow order: **Dashboard**, **Create Shorts**,
+**My Videos**, **Clip Editor**, **Finished Shorts** and **Analytics**. Under **More** are
+**Processing Queue**, **Settings** and **Guides & Help**. **My Videos** holds the video list
+(Videos tab) and Transcripts; **Clip Editor** holds Review candidates, Edit Short and the upload
+package. **Edit** on a candidate opens it in the Edit Short step.
 
 ### Dashboard
 
-- **Videos**, **Library size**, **Media prepared**, **Transcribed** and **Active jobs** counters.
+- Two shortcuts: **Make Shorts** and **Watch and download**.
+- Worker status: **Ready**, the number of jobs in progress, or a warning when no worker runs.
 - A notice when videos still need media preparation or a preparation stage failed.
-- Worker status: a green notice when a worker is running, a warning when none is.
-- **Storage**: where your data, the originals vault, generated files, exports, speech models
-  and the database are.
+- Recent videos and recent exports.
+- **Studio details** (folded away): a seven-step tracker for your newest video, counters, and
+  where your data, originals, exports, models and database are.
 
 ### Guides & Help
 
@@ -413,6 +411,28 @@ latest 100), lists active jobs with Cancel, and keeps Retry for failed or cancel
 effect, and diagnostics (FFmpeg, FFprobe, worker, database version). Values come from
 `IFTYEDITS_` environment variables or `.env`; the page does not edit them. Its one switch hides
 or shows the Dashboard welcome card.
+
+## Analytics (optional)
+
+**Analytics** shows how your uploaded Shorts perform. It only reads from YouTube.
+
+1. Connect your account in Settings (same connection as uploading).
+2. Uploads made by the studio appear by themselves. For a Short you uploaded by hand, open **Add a
+   video you uploaded yourself**, paste its link, and pick the Short it came from if you know it.
+3. Press **Refresh numbers**. Views, likes and comments are lifetime totals at that moment. Only
+   videos on your connected channel are read; others are reported and skipped.
+4. For watch time, average percentage watched and subscribers gained, open **Allow detailed
+   analytics** and sign in again. The YouTube Analytics API must be enabled in your Google Cloud
+   project ([YOUTUBE.md](YOUTUBE.md)). Choose a window of 7, 28, 90 or 365 days. These numbers
+   arrive a few days late.
+
+**What seems to work** groups your videos by moment type, caption style, length and framing, and
+shows medians with the number of videos behind each. It compares groups only when at least two
+hold five videos each. A pattern is not proof that the choice caused it, and nothing changes
+ranking or publishing automatically. Numbers are stored on this computer; **Stop following** a
+video deletes its stored numbers. If you reconnect in Settings, allow detailed analytics again.
+
+The same is available as `iftyedits analytics [list|add|refresh]`.
 
 ## Upload package (Phase 6)
 

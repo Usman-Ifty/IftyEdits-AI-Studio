@@ -18,7 +18,7 @@ Update after every completed milestone.
 | 4 SEO metadata | NOT STARTED |
 | 6 Safety review | NOT STARTED |
 | 7 YouTube integration | NOT STARTED |
-| 8 Analytics | NOT STARTED |
+| 8 Analytics | IN PROGRESS (built and tested against a local stub; not verified with real Google) |
 | 9 Release readiness | NOT STARTED |
 
 ---
@@ -853,3 +853,13 @@ Not verified: podcast, webcam, sports, slides, noisy and non-English footage; sp
 a two-person shot. Not built: speaker detection, split-screen layouts, analytics (Phase 8, left
 out of this round by the owner). The macOS CI failure on the Phase 7 pull request (two editor
 page tests needed `ffprobe`) was fixed on that branch on 2026-11-27.
+
+## Simpler interface and analytics (2026-11-27, branch `feat/face-framing`)
+
+**Interface.** Everyday pages come first in the sidebar, housekeeping sits under **More**, and
+details (workflow tracker, paths, filters, technical stream data) are folded into expanders.
+
+**Analytics (Phase 8, D37).** New Analytics page and `iftyedits analytics` command; migration
+`0011_analytics`; optional second Google permission for watch time and retention. Tests use a local
+stub of Google's endpoints. Real Google analytics has not been tried: it needs the YouTube
+Analytics API enabled and the owner's consent. Traffic sources and ranking tuning are not built.

@@ -43,6 +43,7 @@ from iftyedits.core.shorts import CAPTION_PRESETS
 from iftyedits.core.sources import PERMISSION_NOTICE, parse_video_url
 from iftyedits.pipeline.jobs import JobQueue
 from iftyedits.pipeline.worker import Worker
+from iftyedits.services.analytics import build_analytics_service
 from iftyedits.services.ingest import IngestService, build_vault, discover, validate_source
 from iftyedits.services.production import ProductionOptions
 from iftyedits.services.subtitles import EXPORT_FORMATS, export
@@ -53,6 +54,7 @@ from iftyedits.storage.originals import ProgressCallback, assert_safe_output_pat
 from iftyedits.storage.processing import ProcessingRepository
 from iftyedits.storage.transcripts import TranscriptRepository
 from iftyedits.storage.videos import VideoRepository
+from iftyedits.ui.analytics import video_rows
 from iftyedits.ui.clips import (
     DECISION_FILTERS,
     SORT_OPTIONS,
@@ -318,6 +320,36 @@ def cmd_artifacts(settings: Settings, args: argparse.Namespace) -> int:
     if not artifacts:
         print("  none")
     return EXIT_OK if intact else EXIT_FAILED
+
+
+def cmd_analytics(settings: Settings, args: argparse.Namespace) -> int:
+    """Follow uploaded videos and fetch their numbers (read only on YouTube)."""
+    with closing(open_database(settings.db_path)) as conn:
+        service = build_analytics_service(settings, conn)
+        if args.action == "add":
+            if not args.video:
+                print("Name a video link or id: iftyedits analytics add <link>", file=sys.stderr)
+                return EXIT_USAGE
+            print(f"following {service.add_video(args.video, args.short)}")
+            return EXIT_OK
+        if args.action == "refresh":
+            report = service.refresh(args.days)
+            print(f"updated {report.updated} video(s), {report.detailed} with watch time")
+            for video_id, reason in report.skipped:
+                print(f"  skipped {video_id}: {reason}")
+            if report.note:
+                print(report.note)
+            return EXIT_OK
+        service.sync_uploads()
+        videos = service.videos()
+        if not videos:
+            print("No videos are being followed.")
+        for row in video_rows(videos):
+            print(
+                f"{row['Video'][:50]:<50} views {row['Views']:>7}  likes {row['Likes']:>6}  "
+                f"watched {row['Avg watched']:>5}  {row['Link']}"
+            )
+    return EXIT_OK
 
 
 def cmd_models(settings: Settings, args: argparse.Namespace) -> int:
@@ -966,6 +998,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("video", help="video id (e.g. 3) or SHA-256 prefix (at least 6 characters)")
     p.add_argument("--verify", action="store_true", help="re-hash every generated file")
     p.set_defaults(func=cmd_artifacts)
+
+    p = sub.add_parser("analytics", help="performance of uploaded Shorts (read only)")
+    p.add_argument("action", nargs="?", default="list", choices=["list", "add", "refresh"])
+    p.add_argument("video", nargs="?", help="YouTube link or video id (for add)")
+    p.add_argument("--short", type=int, help="id of the Short the video came from (for add)")
+    p.add_argument("--days", type=int, default=28, help="window for watch time (for refresh)")
+    p.set_defaults(func=cmd_analytics)
 
     p = sub.add_parser("models", help="list, download or verify speech and face models")
     p.add_argument("action", nargs="?", default="list", choices=["list", "download", "verify"])

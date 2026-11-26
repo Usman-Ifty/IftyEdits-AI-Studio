@@ -63,6 +63,7 @@ uv run streamlit run app/Home.py
 | `iftyedits enqueue PATH... [-r] [--process]` | Queue files or folders for the worker; `--process` also prepares media |
 | `iftyedits worker [--once]` | Run queued jobs (imports, preparation, transcription, downloads, production) |
 | `iftyedits fetch URL [--process]` | Queue a download of a YouTube link (only for videos you may use) |
+| `iftyedits analytics [list\|add LINK\|refresh]` | Follow uploaded Shorts and fetch their numbers (read only) |
 | `iftyedits produce SOURCE [--clips N] [--min-score S] [--captions P] [--force]` | Queue the whole link-to-Shorts pipeline for a link, video id or SHA-256 prefix |
 | `iftyedits process VIDEO... \| --all [--stage S] [--force]` | Queue media preparation (audio, proxy, thumbnail) |
 | `iftyedits models [list\|download NAME\|verify NAME]` | List, download or verify speech models |
@@ -233,6 +234,14 @@ Unlisted** after typing an explicit approval of the exact details. The studio ne
 schedules. Manual export remains available. Setup, limits and security: [docs/YOUTUBE.md](docs/YOUTUBE.md).
 Variables: `IFTYEDITS_YOUTUBE_CLIENT_SECRETS`, `IFTYEDITS_YOUTUBE_TOKEN_PATH`,
 `IFTYEDITS_YOUTUBE_CHUNK_MB`, `IFTYEDITS_YOUTUBE_DAILY_UPLOAD_LIMIT`.
+
+## Analytics (Phase 8)
+
+Optional and read only. The **Analytics** page (or `iftyedits analytics`) follows uploaded Shorts,
+fetches views, likes and comments when you ask, adds watch time and retention if you grant the
+extra Analytics permission, and compares editing choices with their sample sizes. It never changes
+anything on YouTube or in ranking. Tested against a local stub only. Setup:
+[docs/YOUTUBE.md](docs/YOUTUBE.md). Variable for local testing: `IFTYEDITS_YOUTUBE_ANALYTICS_BASE`.
 
 ## Upload preparation (Phase 6)
 

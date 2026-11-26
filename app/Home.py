@@ -1,6 +1,6 @@
 """Streamlit entry point. Run with ``uv run iftyedits ui``.
 
-Five everyday sections in workflow order, then three under "More". Several sections group
+Six everyday sections in workflow order, then three under "More". Several sections group
 more than one view script (My Videos = Library + Transcripts, Clip Editor = Clips + Short
 editor), so nothing is lost.
 """
@@ -33,6 +33,7 @@ navigation = st.navigation(
             st.Page("views/my_videos.py", title="My Videos", icon=":material/video_library:"),
             st.Page("views/clip_editor.py", title="Clip Editor", icon=":material/content_cut:"),
             st.Page("views/exports.py", title="Finished Shorts", icon=":material/movie:"),
+            st.Page("views/analytics.py", title="Analytics", icon=":material/insights:"),
         ],
         "More": [
             st.Page("views/jobs.py", title="Processing Queue", icon=":material/pending_actions:"),

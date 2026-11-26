@@ -569,6 +569,10 @@ _Status (2026-11-22): implemented and tested against a stub of Google's APIs; no
 - Recommendations explain their basis.
 - No automatic publishing or destructive optimization occurs.
 
+**Status (2026-11-27): IN PROGRESS.** Built and tested against a local stub: optional consent,
+snapshots, linking to Shorts, comparisons with sample sizes (D37). Open: verification against real
+Google, traffic sources, and ranking tuning from performance data (needs enough published videos).
+
 ---
 
 # Phase 9 — Product Quality and Release Readiness

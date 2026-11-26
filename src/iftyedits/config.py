@@ -98,6 +98,7 @@ class Settings(BaseSettings):
     youtube_chunk_mb: int = Field(default=8, ge=1, le=64)
     youtube_api_base: str = "https://www.googleapis.com/youtube/v3"
     youtube_upload_base: str = "https://www.googleapis.com/upload/youtube/v3"
+    youtube_analytics_base: str = "https://youtubeanalytics.googleapis.com/v2"
     """Only for local test stubs: must be a Google HTTPS address or http on this computer."""
     youtube_daily_upload_limit: int = Field(default=5, ge=0)
     """Soft limit on uploads started per day in this studio (0 = no limit)."""

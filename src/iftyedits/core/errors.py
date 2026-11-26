@@ -168,3 +168,7 @@ class YouTubeUploadError(YouTubeError):
 
 class UploadNotApprovedError(YouTubeError):
     """An upload was attempted without a valid, current approval of the exact details."""
+
+
+class AnalyticsError(IftyEditsError):
+    """Performance numbers could not be added or fetched. The message says why."""

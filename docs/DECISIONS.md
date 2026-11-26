@@ -612,3 +612,22 @@ Vision needs the PyObjC bridge and would not be testable on the Linux CI runner.
 is clearly larger. Small faces (under 8% of frame height) are ignored, so crowds and tiny webcam
 boxes do not steer the crop. Checked on stills from one gameplay video only; podcast and webcam
 footage still need a real-media review.
+
+## D37 — Read-only analytics with two Google sources (2026-11-27)
+
+**Context.** Roadmap Phase 8: optional performance tracking, linked to the right clip, with sample
+sizes and no automatic changes.
+
+**Decision.** Views, likes and comments come from the Data API `videos.list`, which the existing
+`youtube.readonly` permission covers. Watch time and retention come from the YouTube Analytics API
+`reports.query`, whose `yt-analytics.readonly` scope is requested separately and only when the
+owner asks. Numbers are fetched on demand and stored as snapshots (migration `0011`). Videos on
+another channel are skipped. Comparisons show medians per editing choice and need two groups of at
+least five videos. Plain `urllib` is used, as for upload; no Google client library was added.
+
+**Alternatives.** Requiring the Analytics scope at sign-in would widen consent for people who only
+upload. Scheduled background refresh would spend quota unasked.
+
+**Trade-offs.** No traffic sources, no charts over time and no ranking tuning from performance:
+with a handful of videos any tuning would be noise. Reconnecting in Settings drops the optional
+permission. Not verified against real Google.

@@ -60,6 +60,25 @@ loopback redirect, PKCE and a random `state` check.
 - Do not rely on these numbers: the studio reports the real error YouTube returns.
   Sources: developers.google.com/youtube/v3/revision_history, /docs/videos/insert, /determine_quota_cost.
 
+## Analytics (read only)
+
+The Analytics page uses two Google sources.
+
+| Numbers | API | Permission |
+|---|---|---|
+| Views, likes, comments, visibility | Data API `videos.list` (1 quota unit per 50 videos) | `youtube.readonly`, already granted |
+| Watch time, average view duration and percentage, shares, subscribers gained | YouTube Analytics API `reports.query` | `yt-analytics.readonly`, asked for only when you choose it |
+
+For the second row: in Google Cloud, open **APIs & Services → Library**, enable **YouTube
+Analytics API**, add the `yt-analytics.readonly` scope to the consent screen if the console asks,
+then use **Analytics → Allow detailed analytics**. Without it the page still shows the first row.
+Reconnecting from Settings grants only the upload permissions again.
+
+The report is requested for `channel==MINE`, one row per video, at most 200 videos per request.
+YouTube omits the rows when it has no data yet. References: developers.google.com/youtube/analytics
+(reports.query, channel reports) and developers.google.com/youtube/v3/docs/videos/list, read
+2026-11-27. **Not verified against real Google**; only the local stub and tests exercise it.
+
 ## Trying it without Google (local stub)
 
 `scripts/dev_youtube_stub.py` is a development-only stand-in for Google's sign-in, channel and
@@ -77,6 +96,7 @@ and these settings (loopback addresses are the only non-Google hosts the studio 
 - `IFTYEDITS_YOUTUBE_CLIENT_SECRETS`, `IFTYEDITS_YOUTUBE_TOKEN_PATH` (outside the project)
 - `IFTYEDITS_YOUTUBE_API_BASE=http://127.0.0.1:8700/youtube/v3`
 - `IFTYEDITS_YOUTUBE_UPLOAD_BASE=http://127.0.0.1:8700/upload/youtube/v3`
+- `IFTYEDITS_YOUTUBE_ANALYTICS_BASE=http://127.0.0.1:8700/v2`
 
 The stub's `/admin?channel=<id>&fail=quota|none` changes the signed-in channel or makes the next
 upload fail with a quota error, to test channel-mismatch refusal and retry.

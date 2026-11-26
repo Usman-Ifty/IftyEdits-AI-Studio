@@ -38,11 +38,34 @@ class Handler(http.server.BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         q = urllib.parse.parse_qs(parsed.query)
         if parsed.path == "/auth":  # auto-approve and bounce back to the studio's loopback
+            STATE["scope"] = q.get("scope", [""])[0]
             target = f"{q['redirect_uri'][0]}/?code=STUBCODE&state={q['state'][0]}"
             return self._send(302, headers={"Location": target})
         if parsed.path == "/youtube/v3/channels":
             items = [{"id": STATE["channel"], "snippet": {"title": "Stub Channel"}}]
             return self._send(200, json.dumps({"items": items}).encode())
+        if parsed.path == "/youtube/v3/videos":
+            ids = q.get("id", [""])[0].split(",")
+            videos = [
+                {
+                    "id": i,
+                    "snippet": {"channelId": STATE["channel"], "title": f"Stub video {i}"},
+                    "status": {"privacyStatus": "private"},
+                    "statistics": {"viewCount": "120", "likeCount": "9", "commentCount": "2"},
+                }
+                for i in ids
+                if i
+            ]
+            return self._send(200, json.dumps({"items": videos}).encode())
+        if parsed.path == "/v2/reports":
+            ids = q["filters"][0].removeprefix("video==").split(",")
+            names = ["video", *q["metrics"][0].split(",")]
+            numbers = [120, 55.5, 27, 68.4, 9, 2, 3, 1]
+            report = {
+                "columnHeaders": [{"name": n} for n in names],
+                "rows": [[i, *numbers[: len(names) - 1]] for i in ids],
+            }
+            return self._send(200, json.dumps(report).encode())
         if parsed.path == "/admin":  # /admin?channel=UC_OTHER or ?fail=quota
             if "channel" in q:
                 STATE["channel"] = q["channel"][0]
@@ -54,7 +77,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         body = self._body()
         if self.path.startswith("/token"):
-            scope = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly"
+            scope = STATE.get("scope") or (
+                "https://www.googleapis.com/auth/youtube.upload "
+                "https://www.googleapis.com/auth/youtube.readonly"
+            )
             out = {"access_token": "stub-access", "expires_in": 3600, "scope": scope}
             if b"authorization_code" in body:
                 out["refresh_token"] = "stub-refresh"  # noqa: S105

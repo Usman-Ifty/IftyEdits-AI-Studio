@@ -93,6 +93,15 @@ with st.expander("5. Export and find your files"):
     )
     st.code(f"{settings.exports_dir}/shorts/<video-name>-v<id>/", language="text")
 
+with st.expander("6. Upload and see how it performs (optional)"):
+    st.markdown(
+        "Clip Editor > Upload package walks through title and description, safety review, "
+        "rights and a checklist. With YouTube connected (Settings), it can upload as Private "
+        "or Unlisted after you approve the exact details; you publish in YouTube Studio. "
+        "**Analytics** then shows views and likes when you press Refresh numbers, and watch "
+        "time if you allow detailed analytics. It only reads from YouTube."
+    )
+
 with st.expander("What the scores mean"):
     st.markdown(
         "Each suggestion gets 0 to 100 from thirteen parts: hook, completeness, context, "
@@ -118,7 +127,8 @@ st.markdown(
     "- **Formats:** " + ", ".join(settings.video_extensions) + "\n"
     "- **Needs:** FFmpeg and FFprobe installed (`uv run iftyedits check` verifies them).\n"
     "- **Your data:** videos, database and exports stay under "
-    f"`{settings.data_dir}`. Nothing is uploaded anywhere by this app.\n"
+    f"`{settings.data_dir}`. Nothing is uploaded unless you approve that upload yourself "
+    "(optional AI writing may send transcript text to the provider you set up).\n"
     "- **Rights:** you are responsible for having permission to reuse a video; the "
     "studio cannot judge copyright, fair use or platform rules.\n"
     "- **Common problems:** *no worker running* means start `uv run iftyedits worker` "
