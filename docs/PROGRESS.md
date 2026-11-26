@@ -863,3 +863,16 @@ details (workflow tracker, paths, filters, technical stream data) are folded int
 `0011_analytics`; optional second Google permission for watch time and retention. Tests use a local
 stub of Google's endpoints. Real Google analytics has not been tried: it needs the YouTube
 Analytics API enabled and the owner's consent. Traffic sources and ranking tuning are not built.
+
+Browser check on a scratch copy with the local Google stub (2026-11-27): all nine pages loaded
+with no error boxes; at 375 px the Dashboard, Clip Editor, Finished Shorts and Analytics pages
+did not scroll sideways; connect, follow a video, refresh, allow detailed analytics and refresh
+again worked. The only console errors seen were 404s for Streamlit's `/<page>/_stcore/*` probes
+on deep links, after which the root addresses answered. Two layout faults were fixed: the
+details label overflowing Finished Shorts cards and a full-width video preview in the editor.
+
+Real library: one GTA 6 Short (project 3) was re-framed with hand-set keyframes per scene,
+lightly brightened, loudness-normalised and exported (render 9). Nothing was uploaded; the
+rights record, checklist, audience and approval remain the owner's to complete. The automatic
+face framing gave a good first position for that clip, but it missed two scene changes that have
+no stored scene cut, so the keyframes were corrected by hand.
