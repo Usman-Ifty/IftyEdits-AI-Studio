@@ -72,3 +72,14 @@ def test_clip_settings_defaults_and_overrides(tmp_path: Path) -> None:
 def test_invalid_clip_settings_are_refused(tmp_path: Path, env: dict[str, str]) -> None:
     with pytest.raises(ValueError, match=r"clip|greater|less|validation"):
         Settings.from_env(env, base_dir=tmp_path)
+
+
+def test_default_speech_model_is_small_in_code_and_env_example(tmp_path: Path) -> None:
+    assert Settings.from_env({}, base_dir=tmp_path).transcription_model == "small"
+    example = Path(__file__).resolve().parents[2] / ".env.example"
+    active = [
+        line
+        for line in example.read_text(encoding="utf-8").splitlines()
+        if "IFTYEDITS_TRANSCRIPTION_MODEL=" in line
+    ]
+    assert active == ["IFTYEDITS_TRANSCRIPTION_MODEL=small"]

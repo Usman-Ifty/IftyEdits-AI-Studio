@@ -289,3 +289,24 @@ def test_read_wav_info_and_clock(tmp_path: Path) -> None:
     info = read_wav_info(write_wav(tmp_path / "a.wav", 1.5))
     assert (info.sample_rate, info.channels, info.frames, info.duration_s) == (16000, 1, 24000, 1.5)
     assert clock(5.9) == "0:05" and clock(3725) == "1:02:05"
+
+
+def test_switching_model_adds_a_version_and_keeps_the_old_one(
+    service: TranscriptionService,
+    video: Video,
+    db_conn: sqlite3.Connection,
+    models: FakeModelStore,
+) -> None:
+    models.installed.add("tiny")
+    old = service.transcribe(video.id, TranscriptionOptions("tiny")).transcript
+    repo = TranscriptRepository(db_conn)
+    old_segments = repo.segments(old.id)
+
+    new = service.transcribe(video.id, OPTIONS)
+
+    assert not new.reused and new.transcript.id != old.id
+    assert {t.model for t in repo.for_video(video.id)} == {"tiny", "small"}
+    assert repo.segments(old.id) == old_segments
+    kept = repo.get(old.id)
+    assert kept is not None and not kept.is_current
+    assert repo.current(video.id) == repo.get(new.transcript.id)
