@@ -171,6 +171,28 @@ CATALOG: tuple[SpeechModelSpec, ...] = (
 )
 
 
+FACE_ENGINE_DIR = "faces"
+FACE_MODEL = "yunet"
+
+# Size and SHA-256 were read from the Hugging Face API on 2026-11-27 for this revision.
+FACE_CATALOG: tuple[SpeechModelSpec, ...] = (
+    SpeechModelSpec(
+        name=FACE_MODEL,
+        repo_id="opencv/face_detection_yunet",
+        revision="3cc26e7f1014a5ee5d74a42acee58bafc9d0a310",
+        files=(
+            ModelFile(
+                "face_detection_yunet_2023mar.onnx",
+                232_589,
+                "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
+            ),
+        ),
+        summary="Finds faces for the vertical crop (MIT). Locates only, never identifies.",
+        ram_gb=0.2,
+    ),
+)
+
+
 def file_url(spec: SpeechModelSpec, file: ModelFile) -> str:
     """Download URL of one model file at the pinned revision."""
     return f"{HF_BASE_URL}/{spec.repo_id}/resolve/{spec.revision}/{file.name}"
@@ -221,8 +243,9 @@ class ModelStore:
         catalog: tuple[SpeechModelSpec, ...] = CATALOG,
         opener: Opener | None = None,
         forbidden_roots: tuple[Path, ...] = (),
+        engine_dir: str = ENGINE_DIR,
     ) -> None:
-        self.root = models_dir / ENGINE_DIR
+        self.root = models_dir / engine_dir
         self._catalog = catalog
         self._open: Opener = opener if opener is not None else _default_opener
         self._forbidden = forbidden_roots
@@ -321,7 +344,7 @@ class ModelStore:
         installed = self.status(name)
         if installed.state is not ModelState.INSTALLED:
             raise ModelDownloadError(f"Model {name} failed verification after download")
-        logger.info("Installed speech model %s from %s@%s", name, spec.repo_id, spec.revision)
+        logger.info("Installed model %s from %s@%s", name, spec.repo_id, spec.revision)
         return installed
 
     def clean_staging(self, max_age_s: float = STALE_STAGING_AGE_S) -> int:
@@ -466,3 +489,13 @@ class ModelStore:
 def build_model_store(settings: Settings) -> ModelStore:
     """The model store for these settings; refuses a models directory inside the vault."""
     return ModelStore(settings.models_dir, forbidden_roots=(settings.originals_dir,))
+
+
+def build_face_model_store(settings: Settings) -> ModelStore:
+    """The face detection model, stored and verified like the speech models."""
+    return ModelStore(
+        settings.models_dir,
+        catalog=FACE_CATALOG,
+        engine_dir=FACE_ENGINE_DIR,
+        forbidden_roots=(settings.originals_dir,),
+    )

@@ -204,5 +204,5 @@ def analysis_facts(analysis: ClipAnalysis) -> dict[str, str]:
         part = sources.get(key)
         if isinstance(part, dict):
             facts[label] = "used" if part.get("used") else str(part.get("note", "not used"))
-    facts["Faces and speakers"] = "not analysed (Phase 3)"
+    facts["Faces and speakers"] = "not analysed for suggestions"
     return facts

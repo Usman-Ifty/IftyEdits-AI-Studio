@@ -57,6 +57,8 @@ class Settings(BaseSettings):
     ffmpeg_timeout_s: float = Field(default=6 * 3600.0, gt=0)
     proxy_encoder: EncoderPreference = "auto"
     export_encoder: EncoderPreference = "auto"
+    face_framing: bool = True
+    """Follow faces with the vertical crop when the face model is installed."""
     min_free_bytes: int = 2 * 1024**3
     transcription_model: str = "small"
     transcription_language: str = "auto"

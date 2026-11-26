@@ -75,9 +75,10 @@ with st.expander("4. Edit a Short"):
     st.markdown(
         f"Open a suggestion with Edit as a Short. Length must be {MIN_CLIP_S:.0f} to "
         f"{MAX_CLIP_S:.0f} seconds. **Framing** has a crop slider and *Auto-frame*. "
-        "Auto-frame looks at frames across the clip, picks the busiest part of the picture "
-        "and, if it shifts, pans slowly with it (no jumps, a hard cut may reposition at "
-        "once). It does not recognise faces or people, so check the crop guide. "
+        "Auto-frame looks at frames across the clip. With the face model installed "
+        "(`iftyedits models download yunet`) it follows faces; otherwise it picks the "
+        "busiest part of the picture. It pans slowly and jumps only at scene cuts. It "
+        "never identifies anyone and can miss, so check the crop guide. "
         "The mode shown above the slider tells you whether the crop is *Auto-follow* or "
         "*Manual*: moving the slider or the trim by hand switches to manual, and automatic "
         "production never overrides a crop you set. **Captions** has presets (Clean creator, "

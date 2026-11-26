@@ -22,7 +22,11 @@ from iftyedits import __version__
 from iftyedits.adapters.faster_whisper import engine_version
 from iftyedits.adapters.ffmpeg import FFmpeg
 from iftyedits.adapters.ffprobe import FFprobe
-from iftyedits.adapters.model_store import build_model_store
+from iftyedits.adapters.model_store import (
+    FACE_MODEL,
+    build_face_model_store,
+    build_model_store,
+)
 from iftyedits.config import Settings, project_home
 from iftyedits.core.clip_models import ClipCandidate, ClipDecision
 from iftyedits.core.errors import IftyEditsError
@@ -317,8 +321,9 @@ def cmd_artifacts(settings: Settings, args: argparse.Namespace) -> int:
 
 
 def cmd_models(settings: Settings, args: argparse.Namespace) -> int:
-    """List speech models, or download / verify one."""
-    store = build_model_store(settings)
+    """List models, or download / verify one."""
+    faces = build_face_model_store(settings)
+    store = faces if args.name == FACE_MODEL else build_model_store(settings)
     if args.action == "list":
         print(f"models dir  {store.root}")
         for status in store.statuses():
@@ -328,6 +333,12 @@ def cmd_models(settings: Settings, args: argparse.Namespace) -> int:
                 f"RAM ~{row['RAM (approx.)']:<7} {row['Notes']}"
             )
         print(f"default     {settings.transcription_model}")
+        face = faces.status(FACE_MODEL)
+        print(f"faces dir   {faces.root}")
+        print(
+            f"  {FACE_MODEL:<15} {face.state.value:<18} "
+            f"{human_size(face.spec.size_bytes):>9}  {face.spec.summary}"
+        )
         return EXIT_OK
     if not args.name:
         print("Name a model, for example: iftyedits models download small", file=sys.stderr)
@@ -956,9 +967,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--verify", action="store_true", help="re-hash every generated file")
     p.set_defaults(func=cmd_artifacts)
 
-    p = sub.add_parser("models", help="list, download or verify speech models")
+    p = sub.add_parser("models", help="list, download or verify speech and face models")
     p.add_argument("action", nargs="?", default="list", choices=["list", "download", "verify"])
-    p.add_argument("name", nargs="?", help="model name, e.g. small")
+    p.add_argument("name", nargs="?", help="model name, e.g. small or yunet")
     p.set_defaults(func=cmd_models)
 
     p = sub.add_parser("transcribe", help="queue transcription of imported videos")

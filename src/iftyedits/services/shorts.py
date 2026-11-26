@@ -22,8 +22,9 @@ import re
 import shutil
 import sqlite3
 import unicodedata
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, replace
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -43,9 +44,11 @@ from iftyedits.adapters.short_render import (
 )
 from iftyedits.config import Settings
 from iftyedits.core.captions import CaptionCue, build_cues
+from iftyedits.core.clip_models import SignalKind
 from iftyedits.core.errors import (
     ClipNotFoundError,
     ExternalToolError,
+    FaceDetectionError,
     IftyEditsError,
     InsufficientSpaceError,
     InvalidSourceError,
@@ -54,15 +57,18 @@ from iftyedits.core.errors import (
     ShortRenderError,
 )
 from iftyedits.core.framing import (
+    CENTER,
+    DEAD_ZONE,
     CropPath,
     CropSuggestion,
     FramingObservation,
     best_window,
+    face_position,
     follow_subject,
     suggest_position,
 )
 from iftyedits.core.models import JobStatus, StoredSegment, Video
-from iftyedits.core.protocols import CancelToken, MediaProber, MediaTranscoder
+from iftyedits.core.protocols import CancelToken, FaceDetector, MediaProber, MediaTranscoder
 from iftyedits.core.shorts import ShortConfig, compute_crop
 from iftyedits.pipeline.jobs import JobQueue
 from iftyedits.storage.clips import ClipRepository
@@ -84,9 +90,16 @@ TranscoderFactory = Callable[[], MediaTranscoder]
 SHORTS_DIR = "shorts"
 PREVIEW_SIZE = "540p"
 ENCODE_SHARE = 0.92
+"""Share of the progress bar used by the FFmpeg encode (the rest is checks and moving)."""
 CUT_CHANGE = 0.18
 MIN_PATH_WEIGHT = 0.05
-"""Share of the progress bar used by the FFmpeg encode (the rest is checks and moving)."""
+FACE_STEP_S = 1.0
+"""Seconds between pictures checked for faces inside one shot."""
+FACE_MAX_SAMPLES = 60
+SHOT_MARGIN_S = 0.1
+"""A shot is first sampled this long after its cut, past any blended frame."""
+MIN_FACE_COVERAGE = 0.25
+"""Below this share of pictures with a face, the clip is framed by picture detail instead."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -183,8 +196,34 @@ def claim_unique_path(partial: Path, directory: Path, stem: str, suffix: str = "
     raise ShortRenderError("Could not find a free export file name")
 
 
+def shot_samples(
+    cuts: Sequence[float], duration_s: float, *, max_samples: int = FACE_MAX_SAMPLES
+) -> list[tuple[float, float, bool]]:
+    """``(reading time, picture time, starts a shot)`` for every picture to check.
+
+    Each shot is sampled just after its cut and then every :data:`FACE_STEP_S`. The first
+    reading of a shot is dated at the cut itself, so the window moves exactly there. Long
+    clips are sampled more coarsely to stay within ``max_samples``.
+    """
+    edges = [0.0, *sorted(c for c in cuts if 0.0 < c < duration_s), duration_s]
+    step = max(FACE_STEP_S, duration_s / max_samples)
+    out: list[tuple[float, float, bool]] = []
+    for begin, end in pairwise(edges):
+        at = begin + min(SHOT_MARGIN_S, (end - begin) / 2)
+        first = True
+        while first or at < end - SHOT_MARGIN_S:
+            out.append((begin if first else at, at, first))
+            first = False
+            at += step
+    if len(out) > max_samples:
+        keep = max(1.0, len(out) / max_samples)
+        out = [out[int(i * keep)] for i in range(max_samples)]
+    return out
+
+
 def build_short_service(settings: Settings, conn: sqlite3.Connection) -> ShortService:
     """A service wired to the real FFmpeg and ffprobe, for the editor page and the CLI."""
+    from iftyedits.adapters.faces import load_face_detector
     from iftyedits.adapters.ffprobe import FFprobe
 
     return ShortService(
@@ -198,6 +237,7 @@ def build_short_service(settings: Settings, conn: sqlite3.Connection) -> ShortSe
         lambda: FFmpeg(
             settings.ffmpeg_path, settings.ffmpeg_timeout_s, encoder=settings.export_encoder
         ),
+        load_face_detector(settings),
     )
 
 
@@ -214,6 +254,7 @@ class ShortService:
         queue: JobQueue,
         prober: MediaProber,
         transcoder: TranscoderFactory,
+        faces: FaceDetector | None = None,
     ) -> None:
         self.settings = settings
         self.videos = videos
@@ -223,6 +264,7 @@ class ShortService:
         self.queue = queue
         self.prober = prober
         self.transcoder = transcoder
+        self.faces = faces
 
     # ------------------------------------------------------------------ paths
 
@@ -379,19 +421,25 @@ class ShortService:
         return suggest_position(frames, crop.width / info.width)
 
     def suggest_path(self, project_id: int, *, max_samples: int = 12) -> CropPath:
-        """A calm moving window for this clip: frames are sampled about every two seconds,
-        scene cuts are flagged, and :func:`follow_subject` smooths the result. Never raises
-        for unreadable frames; the result may be steady or centred. Nothing is saved here and
-        no face or identity is looked for or stored."""
+        """A calm moving window for this clip, smoothed by :func:`follow_subject`.
+
+        With a face detector the window follows faces and jumps at scene cuts. Without one,
+        or when the clip shows few faces, frames are sampled about every two seconds and
+        judged by picture detail. Never raises for unreadable frames; the result may be
+        steady or centred. Nothing is saved here and no identity is looked for or stored.
+        """
         project = self.project(project_id)
         config = project.config
         info = self.source_info(project.video_id)
         crop = compute_crop(info.width, info.height, 0.5)
         if crop.width >= info.width - 2:
             return CropPath(((0.0, 0.5),), "none", 0.0, "The picture is not wider than 9:16.")
+        window = crop.width / info.width
+        followed = self._face_path(project.video_id, config, window)
+        if followed is not None:
+            return followed
         count = max(3, min(max_samples, round(config.duration_s / 2.0)))
         step = config.duration_s / count
-        window = crop.width / info.width
         found: list[FramingObservation] = []
         previous: Image.Image | None = None
         for index in range(count):
@@ -410,6 +458,85 @@ class ShortService:
         if all(o.weight < MIN_PATH_WEIGHT for o in found):
             return CropPath(((0.0, 0.5),), "center", 0.0, "Nothing stood out, so it is centred.")
         return follow_subject(found, config.duration_s)
+
+    def _cut_times(self, video_id: int, start_s: float, end_s: float) -> list[float]:
+        """Scene cuts of the current analysis inside the clip, in clip time."""
+        analysis = self.clips.current(video_id)
+        if analysis is None:
+            return []
+        return sorted(
+            s.start_s - start_s
+            for s in self.clips.signals(analysis.id)
+            if s.kind is SignalKind.SCENE_CUT
+            and start_s + SHOT_MARGIN_S < s.start_s < end_s - 2 * SHOT_MARGIN_S
+        )
+
+    def _face_path(self, video_id: int, config: ShortConfig, window: float) -> CropPath | None:
+        """A window path that follows faces, or ``None`` to use picture detail instead."""
+        if self.faces is None:
+            return None
+        samples = shot_samples(
+            self._cut_times(video_id, config.start_s, config.end_s), config.duration_s
+        )
+        observations: list[FramingObservation] = []
+        previous: Image.Image | None = None
+        position: float | None = None
+        read = with_face = 0
+        shot: list[tuple[FramingObservation, bool]] = []
+
+        def close_shot() -> None:
+            """Keep face readings; a shot with no face at all is framed by detail."""
+            faces_seen = any(seen for _, seen in shot)
+            kept = [o for o, seen in shot if seen == faces_seen]
+            if kept and shot[0][0].cut:
+                kept[0] = replace(kept[0], time_s=shot[0][0].time_s, cut=True)
+            observations.extend(kept)
+            shot.clear()
+
+        for index, (time_s, at_s, new_shot) in enumerate(samples):
+            try:
+                still = self.still(video_id, config.start_s + at_s)
+                with Image.open(still) as image:
+                    image.load()
+                    changed = previous is not None and picture_change(previous, image) > CUT_CHANGE
+                    cut = new_shot or changed
+                    if cut and index:
+                        close_shot()
+                        position = None
+                    found = face_position(self.faces.detect(still), window, position)
+                    if found is None:
+                        fallback, contrast = best_window(column_interest(image), window)
+                        weight = max(0.0, min(1.0, (contrast - 1.0) / 2.0))
+                        if weight < MIN_PATH_WEIGHT:
+                            fallback, weight = CENTER, MIN_PATH_WEIGHT
+                    else:
+                        position, weight = found
+                        fallback = position
+                        with_face += 1
+                    previous = image.copy()
+            except FaceDetectionError as exc:
+                logger.warning("Face framing skipped: %s", exc)
+                return None
+            except (IftyEditsError, OSError) as exc:
+                logger.info("Skipped a frame while framing: %s", exc)
+                continue
+            read += 1
+            shot.append(
+                (FramingObservation(time_s, fallback, weight, cut and bool(index)), bool(found))
+            )
+        if shot:
+            close_shot()
+        if not read or with_face / read < MIN_FACE_COVERAGE:
+            return None
+        path = follow_subject(observations, config.duration_s, cut_jump=DEAD_ZONE)
+        if path.method not in ("follow", "steady"):
+            return None
+        note = (
+            "The window follows faces, panning slowly and jumping at scene cuts."
+            if path.method == "follow"
+            else "The window is steady, placed on the faces."
+        )
+        return replace(path, note=f"{note} Faces were seen in {with_face} of {read} pictures.")
 
     # ------------------------------------------------------------------ requests
 

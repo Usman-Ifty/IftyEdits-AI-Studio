@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Protocol
 
 from iftyedits.core.clip_models import SceneCut
+from iftyedits.core.framing import FaceBox
 from iftyedits.core.models import (
     EngineTranscription,
     MediaInfo,
@@ -18,6 +19,14 @@ from iftyedits.core.models import (
     TranscriptSegment,
 )
 from iftyedits.core.sources import SourceMetadata, VideoUrl
+
+
+class FaceDetector(Protocol):
+    """Finds where faces are in a still picture. It never identifies anyone."""
+
+    def detect(self, image: Path) -> list[FaceBox]:
+        """Faces in ``image``, or raise ``FaceDetectionError``."""
+        ...
 
 
 class MediaProber(Protocol):

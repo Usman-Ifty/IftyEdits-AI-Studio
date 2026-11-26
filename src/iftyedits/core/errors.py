@@ -90,6 +90,10 @@ class ModelDownloadError(IftyEditsError):
     """A speech model could not be downloaded or failed verification."""
 
 
+class FaceDetectionError(IftyEditsError):
+    """The face model could not be loaded or could not read a picture."""
+
+
 class ClipAnalysisError(IftyEditsError):
     """Clip intelligence could not run for a video. The message says why and what to do."""
 

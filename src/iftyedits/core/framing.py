@@ -1,12 +1,11 @@
 """Choose where the 9:16 window sits in a wide frame (pure functions, no I/O).
 
-The picture is judged by *visual interest per column*: edges and detail, which is where
-faces, text, game action and slide content are. This is a plain heuristic. It does not
-recognise faces or people and it can be wrong, so the result is only ever a starting
-position the user can change, and an unclear picture falls back to the centre.
-
-The window position is one steady value for the whole clip, taken as the median over
-several sampled frames, so the picture never jumps between subjects.
+Two kinds of evidence are used. When a face detector is available, the window follows
+where faces are (:func:`face_position`); it only ever knows *where* a face is, never whose
+it is. Otherwise the picture is judged by *visual interest per column*: edges and detail,
+which is where text, game action and slide content are. Both can be wrong, so the result
+is only ever a starting position the user can change, and an unclear picture falls back to
+the centre. :func:`follow_subject` turns either kind of reading into a calm window path.
 """
 
 from __future__ import annotations
@@ -110,6 +109,67 @@ DWELL_READINGS = 2
 """Consecutive readings on the same side of the dead zone before the window starts to move."""
 
 
+MIN_FACE_HEIGHT = 0.08
+"""Faces shorter than this share of the frame height (a crowd, a poster) are ignored."""
+SWITCH_RATIO = 1.3
+"""Another face must be this much more prominent before the window leaves the current one."""
+GROUP_FIT = 0.9
+"""Faces are framed together when they span at most this share of the window."""
+
+
+@dataclass(frozen=True, slots=True)
+class FaceBox:
+    """A detected face as fractions (0..1) of the frame: a location, never an identity."""
+
+    x: float
+    y: float
+    width: float
+    height: float
+    score: float
+
+    @property
+    def center_x(self) -> float:
+        """Horizontal centre of the face."""
+        return self.x + self.width / 2
+
+    @property
+    def prominence(self) -> float:
+        """How much the face dominates the picture (size times detector score)."""
+        return self.width * self.height * self.score
+
+
+def face_position(
+    faces: Sequence[FaceBox], window_frac: float, previous: float | None = None
+) -> tuple[float, float] | None:
+    """``(window position, trust)`` that frames the faces, or ``None`` if there are none.
+
+    Faces that fit in one window are framed together. Otherwise the most prominent face
+    wins, but the face already in the window (``previous`` position) is kept unless another
+    is clearly more prominent, so two people do not make the picture swing back and forth.
+    """
+    usable = [f for f in faces if f.height >= MIN_FACE_HEIGHT and f.width > 0]
+    if not usable or not 0.0 < window_frac < 1.0:
+        return None
+    left = min(f.x for f in usable)
+    right = max(f.x + f.width for f in usable)
+    if right - left <= window_frac * GROUP_FIT:
+        centre = (left + right) / 2
+        trust = max(f.score for f in usable)
+    else:
+        main = max(usable, key=lambda f: (f.prominence, -f.x))
+        if previous is not None:
+            start = previous * (1.0 - window_frac)
+            inside = [f for f in usable if start <= f.center_x <= start + window_frac]
+            if inside:
+                current = max(inside, key=lambda f: (f.prominence, -f.x))
+                if main.prominence < current.prominence * SWITCH_RATIO:
+                    main = current
+        centre = main.center_x
+        trust = main.score
+    position = (centre - window_frac / 2) / (1.0 - window_frac)
+    return min(1.0, max(0.0, position)), min(1.0, max(0.0, trust))
+
+
 @dataclass(frozen=True, slots=True)
 class FramingObservation:
     """Where the subject was at one sampled moment (seconds from the clip start)."""
@@ -146,6 +206,7 @@ def follow_subject(
     dead_zone: float = DEAD_ZONE,
     max_speed: float = MAX_SPEED,
     min_weight: float = 0.05,
+    cut_jump: float = CUT_JUMP,
 ) -> CropPath:
     """Turn noisy per-moment subject positions into a calm window path.
 
@@ -180,7 +241,7 @@ def follow_subject(
     for obs, target in zip(usable, smooth, strict=True):
         t = min(max(obs.time_s, 0.0), duration_s)
         dt = max(0.0, t - last_t)
-        if obs.cut and abs(target - held) >= CUT_JUMP:
+        if obs.cut and abs(target - held) >= cut_jump:
             if t > last_t:
                 keys.append((round(max(last_t, t - 0.001), 3), round(held, 3)))
             held = target
@@ -215,7 +276,11 @@ def follow_subject(
 
 
 def _thin(keys: list[tuple[float, float]]) -> tuple[tuple[float, float], ...]:
-    """Drop repeated times and cap the keyframe count (keeps the first and last)."""
+    """Drop repeated times and cap the keyframe count (keeps the first and last).
+
+    Over the cap, the keyframe whose removal changes the path least goes first, so the
+    instant jumps at scene cuts survive.
+    """
     clean: list[tuple[float, float]] = []
     for t, p in keys:
         if clean and t <= clean[-1][0]:
@@ -225,10 +290,15 @@ def _thin(keys: list[tuple[float, float]]) -> tuple[tuple[float, float], ...]:
             clean[-1] = (t, p)
             continue
         clean.append((t, p))
-    if len(clean) > MAX_KEYFRAMES:
-        step = (len(clean) - 1) / (MAX_KEYFRAMES - 1)
-        clean = [clean[round(i * step)] for i in range(MAX_KEYFRAMES)]
+    while len(clean) > MAX_KEYFRAMES:
+        del clean[min(range(1, len(clean) - 1), key=lambda i: _removal_error(clean, i))]
     return tuple(clean)
+
+
+def _removal_error(keys: Sequence[tuple[float, float]], index: int) -> float:
+    """How far the path moves at ``index`` if that keyframe is removed."""
+    (t0, p0), (t, p), (t1, p1) = keys[index - 1], keys[index], keys[index + 1]
+    return abs(p - (p0 + (p1 - p0) * (t - t0) / (t1 - t0)))
 
 
 def position_at(path: Sequence[tuple[float, float]], t: float) -> float:
