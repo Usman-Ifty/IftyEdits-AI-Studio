@@ -49,6 +49,10 @@ This starts two things:
 Stop both with Ctrl-C. Options: `--port N` to use another port, `--no-worker` to start only the
 dashboard.
 
+If the dashboard is already running, the command starts nothing and tells you whether a worker is
+active. To start just a worker for it, run `uv run iftyedits ui --start-worker`; the worker begins
+processing every queued job.
+
 You can also run them in two terminals:
 
 ```bash
@@ -277,7 +281,7 @@ Run any command as `uv run iftyedits <command>`. Use `--help` after a command fo
 | `show VIDEO [--verify]` | Show one video; `--verify` re-hashes the vault copy |
 | `reconcile` | Record vault files that have no database entry |
 | `check` | Verify tools, engine, models, database and workers |
-| `ui [--port N] [--address A] [--no-worker]` | Start the dashboard and a worker |
+| `ui [--port N] [--address A] [--no-worker \| --start-worker]` | Start the dashboard and a worker |
 
 `VIDEO` is an ID (e.g. `3`) or a SHA-256 prefix of at least 6 characters.
 

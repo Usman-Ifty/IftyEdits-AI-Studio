@@ -576,3 +576,18 @@ approval to exact content removes the gap between "what I reviewed" and "what wa
 Google's endpoints, not the live service. Quota figures in sources conflict, so the studio reports
 YouTube's actual errors instead of predicting quota. shadcn/ui was not adopted: it is a React/Tailwind
 component set and cannot be used inside Streamlit without a separate front-end rewrite.
+
+## D35 — Startup never claims jobs by accident; `small` is the example speech model (2026-11-27)
+
+**Decision.** `iftyedits ui` probes the port before starting anything and starts its worker only
+after the dashboard answers `/_stcore/health`. With a healthy dashboard already on the port it
+starts nothing; `--start-worker` is the explicit opt-in for a worker only, and no second worker is
+started while one has a recent heartbeat. The queue is read through a read-only connection.
+`.env.example` now sets the speech model to `small`, matching the code default.
+
+**Why.** The worker used to start before Streamlit. A launch on an occupied port claimed a queued
+job and then returned it to the queue.
+
+**Trade-offs.** "Healthy" means a Streamlit health check answers; another Streamlit app on the same
+port would look the same. A very small race remains if two launches happen at once. A worker killed
+without cleanup counts as active for up to 15 seconds.

@@ -818,3 +818,11 @@ plain "what to do next" sentence. Console: the only 404s are Streamlit's `/<page
 appear only while the server restarts. Neither is an app fault.
 Still unverified: the real Google OAuth consent screen, token expiry in Testing mode, real quota
 numbers, real upload. Phase 7 acceptance is met locally; real-Google confirmation is the open blocker.
+
+## Startup safety and speech model (2026-11-27)
+
+`iftyedits ui` no longer starts a worker when the port is taken (D35); `--start-worker` added.
+`.env.example` uses the `small` speech model; existing transcripts are kept, and a new `small`
+transcript becomes current only when a transcription actually runs. Claude support already existed
+(Phase 6.10); it still needs `ANTHROPIC_API_KEY` and has not been tried against the real API.
+Verified with unit tests and a start/stop check using real processes on scratch data.

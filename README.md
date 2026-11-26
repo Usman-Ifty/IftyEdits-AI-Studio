@@ -40,6 +40,11 @@ Start the dashboard and a background worker together (binds to `127.0.0.1:8501`)
 uv run iftyedits ui
 ```
 
+The port is checked first, and the worker starts only after the dashboard is healthy. If a healthy
+dashboard already answers on the port, nothing is started: the command reports whether a worker is
+active and how many jobs are waiting. `uv run iftyedits ui --start-worker` then starts a worker
+only (never a second one), which begins processing the queued jobs.
+
 Or run them separately, in two terminals:
 
 ```bash
@@ -72,7 +77,7 @@ uv run streamlit run app/Home.py
 | `iftyedits show VIDEO [--verify]` | Show one video; `--verify` re-hashes the vault copy |
 | `iftyedits reconcile` | Record vault files that have no database row |
 | `iftyedits check` | Verify ffprobe, ffmpeg, faster-whisper, models, database and workers |
-| `iftyedits ui [--port N] [--address A] [--no-worker]` | Start Streamlit plus a worker; binds to `127.0.0.1:8501` by default |
+| `iftyedits ui [--port N] [--address A] [--no-worker \| --start-worker]` | Start Streamlit plus a worker; binds to `127.0.0.1:8501` by default. With a dashboard already running, starts nothing unless `--start-worker` is given |
 
 `VIDEO` is a video ID or a SHA-256 prefix of at least 6 characters.
 `-r` / `--recursive` includes subfolders. Every entry that is not imported (symbolic link,
