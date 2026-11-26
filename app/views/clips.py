@@ -22,7 +22,6 @@ from iftyedits.ui.clips import (
     ClipFilter,
     analysis_facts,
     card_reason,
-    card_warning,
     category_label,
     clip_row,
     component_rows,
@@ -41,9 +40,8 @@ settings = Settings.from_env()
 
 chrome.heading("Clips")
 st.caption(
-    "Finds moments worth turning into Shorts from a video's transcript, loudness and scene "
-    "changes. Scores are algorithmic recommendations with the evidence shown, not predictions "
-    "of views, and not a check of copyright or platform rules. Nothing is cut or uploaded here."
+    "Suggested moments from the speech, sound and scene changes. A score is not a "
+    "prediction of views or a rights check. Nothing is uploaded here."
 )
 
 
@@ -167,7 +165,8 @@ if not candidates:
     chrome.halt()
 
 present = sorted({c.category for c in candidates})
-f1, f2, f3, f4 = st.columns(4)
+filters = st.expander("Sort and filter")
+f1, f2, f3, f4 = filters.columns(4)
 sort = f1.selectbox(
     "Sort by", list(SORT_OPTIONS), format_func=SORT_OPTIONS.__getitem__, key="clips-sort"
 )
@@ -177,7 +176,7 @@ kinds = f2.multiselect(
 )  # fmt: skip
 status = f3.selectbox("Status", list(DECISION_FILTERS), index=4, key="clips-status")
 min_score = f4.slider("Minimum score", 0, 100, 0, key="clips-min-score")
-d1, d2 = st.columns(2)
+d1, d2 = filters.columns(2)
 min_len = d1.number_input("Shortest (s)", 0, 600, 0, key="clips-min-len")
 max_len = d2.number_input("Longest (s), 0 = no limit", 0, 600, 0, key="clips-max-len")
 shown = sort_candidates(
@@ -207,6 +206,11 @@ def _inspect(c: ClipCandidate) -> None:
     st.session_state[f"clips-pick-{video.id}"] = _label(c)
 
 
+def _open_editor(video_id: int, clip_key: str) -> None:
+    st.session_state["editor-target"] = (video_id, clip_key)
+    st.session_state[chrome.SECTION_KEY] = chrome.EDITOR_SECTION
+
+
 def _thumb(c: ClipCandidate) -> object | None:
     """A still from the middle of the clip, or ``None`` when it cannot be read."""
     middle = (c.effective_start_s + c.effective_end_s) / 2
@@ -228,20 +232,30 @@ for row_start in range(0, len(top), 3):
                 st.image(str(thumb), width="stretch")
             st.markdown(
                 f"**#{cand.rank} {cand.title}**  \n"
-                f"Score **{round(cand.score)}** ({score_band(cand.score)}) · "
-                f"{category_label(cand.category)} · {span_label(cand)}"
+                f"Score **{round(cand.score)}** ({score_band(cand.score)}) · {span_label(cand)}"
             )
-            st.caption(card_reason(cand))
-            warning = card_warning(cand)
-            if warning:
-                st.caption(f":orange[Heads up: {warning}]")
-            st.button(
-                "Inspect",
+            st.caption(card_reason(cand, 90))
+            edit_col, more_col = st.columns(2)
+            if (
+                edit_col.button(
+                    "Edit",
+                    key=f"cardedit-{cand.id}",
+                    type="primary",
+                    width="stretch",
+                    on_click=_open_editor if chrome.embedded() else None,
+                    args=(video.id, cand.key) if chrome.embedded() else None,
+                )
+                and not chrome.embedded()
+            ):
+                _open_editor(video.id, cand.key)
+                st.switch_page("views/editor.py")
+            more_col.button(
+                "Details",
                 key=f"card-{cand.id}",
                 on_click=_inspect,
                 args=(cand,),
                 width="stretch",
-                help="Shows the full reasons, score breakdown and edit actions below.",
+                help="Shows the full reasons and the score breakdown below.",
             )
 with st.expander(f"All {len(shown)} suggestions as a table"):
     st.dataframe([clip_row(c) for c in shown], hide_index=True, width="stretch")
@@ -266,29 +280,25 @@ st.markdown(
 )
 st.write(picked.explanation)
 st.markdown(f"> {picked.excerpt}")
-s1, s2 = st.columns(2)
-with s1:
-    st.markdown("**Strengths**")
-    for line in picked.strengths or ("none noted",):
-        st.markdown(f"- {line}")
-with s2:
-    st.markdown("**Weaknesses**")
-    for line in picked.weaknesses or ("none noted",):
-        st.markdown(f"- {line}")
-st.markdown("**Score breakdown** (value 0-100; weight 0 means not assessed)")
-st.dataframe(component_rows(picked), hide_index=True, width="stretch")
-with st.expander("Evidence signals"):
+with st.expander("Why this score"):
+    s1, s2 = st.columns(2)
+    with s1:
+        st.markdown("**Strengths**")
+        for line in picked.strengths or ("none noted",):
+            st.markdown(f"- {line}")
+    with s2:
+        st.markdown("**Weaknesses**")
+        for line in picked.weaknesses or ("none noted",):
+            st.markdown(f"- {line}")
+    st.markdown("**Score breakdown** (value 0-100; weight 0 means not assessed)")
+    st.dataframe(component_rows(picked), hide_index=True, width="stretch")
+    st.markdown("**Evidence signals**")
     related = signals_for(picked, signals)
     if related:
         st.dataframe([signal_row(s) for s in related], hide_index=True, width="stretch")
     else:
         st.caption("No signals fall inside this clip.")
     st.caption(f"Built by: {', '.join(picked.methods)}. Id {picked.key}.")
-
-
-def _open_editor(video_id: int, clip_key: str) -> None:
-    st.session_state["editor-target"] = (video_id, clip_key)
-    st.session_state[chrome.SECTION_KEY] = chrome.EDITOR_SECTION
 
 
 if st.button(

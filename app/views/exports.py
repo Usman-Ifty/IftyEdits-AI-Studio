@@ -29,7 +29,8 @@ st.markdown(
     ),
     unsafe_allow_html=True,
 )
-st.code(f"{settings.exports_dir}/shorts/", language="text")
+with st.expander("Where are the files?"):
+    st.code(f"{settings.exports_dir}/shorts/", language="text", wrap_lines=True)
 
 with closing(open_database(settings.db_path)) as conn:
     shorts = ShortRepository(conn)
@@ -75,7 +76,8 @@ with tab_files:
     chosen = st.session_state.get(PREVIEW_KEY)
     if chosen:
         file = Path(chosen)
-        with st.container(border=True):
+        _, middle, _ = st.columns([1, 1, 1])  # a 9:16 video at full width is too tall
+        with middle, st.container(border=True):
             if file.is_file() and is_within(file, settings.exports_dir):
                 st.video(str(file))
             else:

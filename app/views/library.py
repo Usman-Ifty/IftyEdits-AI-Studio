@@ -195,34 +195,35 @@ def media_panel(video: Video) -> None:
     else:
         st.caption("This video has not been prepared yet.")
 
-    st.markdown("**Generated files**")
-    if artifacts:
-        st.dataframe([artifact_row(a) for a in artifacts], hide_index=True, width="stretch")
-        st.caption(f"Stored under {settings.derived_dir}")
-    else:
-        st.caption("None yet.")
+    with st.expander("Generated files"):
+        if artifacts:
+            st.dataframe([artifact_row(a) for a in artifacts], hide_index=True, width="stretch")
+            st.caption(f"Stored under {settings.derived_dir}")
+        else:
+            st.caption("None yet.")
 
 
 media_panel(video)
 
-st.markdown("**Streams**")
-st.dataframe([stream_row(s) for s in streams[video.id]], hide_index=True, width="stretch")
+with st.expander("Technical details (streams, integrity, source)"):
+    st.markdown("**Streams**")
+    st.dataframe([stream_row(s) for s in streams[video.id]], hide_index=True, width="stretch")
 
-st.markdown("**Integrity**")
-st.code(
-    f"SHA-256  {video.sha256}\nvault    {settings.originals_dir / video.vault_relpath}",
-    language="text",
-    wrap_lines=True,
-)
-
-st.markdown("**Imported from**")
-if len(sources[video.id]) > 1:
-    st.info(
-        f"Identical content was imported from {len(sources[video.id])} locations. "
-        "It is stored once in the vault."
+    st.markdown("**Integrity**")
+    st.code(
+        f"SHA-256  {video.sha256}\nvault    {settings.originals_dir / video.vault_relpath}",
+        language="text",
+        wrap_lines=True,
     )
-if sources[video.id]:
-    for source in sources[video.id]:
-        st.text(f"{source.source_path}   ({source.imported_at[:19].replace('T', ' ')} UTC)")
-else:
-    st.caption("Recovered by reconcile; original location unknown.")
+
+    st.markdown("**Imported from**")
+    if len(sources[video.id]) > 1:
+        st.info(
+            f"Identical content was imported from {len(sources[video.id])} locations. "
+            "It is stored once in the vault."
+        )
+    if sources[video.id]:
+        for source in sources[video.id]:
+            st.text(f"{source.source_path}   ({source.imported_at[:19].replace('T', ' ')} UTC)")
+    else:
+        st.caption("Recovered by reconcile; original location unknown.")
