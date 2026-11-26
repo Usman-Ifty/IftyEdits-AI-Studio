@@ -185,7 +185,7 @@ def claim_unique_path(partial: Path, directory: Path, stem: str, suffix: str = "
 
 def build_short_service(settings: Settings, conn: sqlite3.Connection) -> ShortService:
     """A service wired to the real FFmpeg and ffprobe, for the editor page and the CLI."""
-    from iftyedits.adapters.ffprobe import FFprobe
+    from iftyedits.adapters.ffprobe import DeferredFFprobe
 
     return ShortService(
         settings,
@@ -194,7 +194,7 @@ def build_short_service(settings: Settings, conn: sqlite3.Connection) -> ShortSe
         ClipRepository(conn),
         ShortRepository(conn),
         JobQueue(conn),
-        FFprobe(settings.ffprobe_path, settings.probe_timeout_s),
+        DeferredFFprobe(settings.ffprobe_path, settings.probe_timeout_s),
         lambda: FFmpeg(
             settings.ffmpeg_path, settings.ffmpeg_timeout_s, encoder=settings.export_encoder
         ),

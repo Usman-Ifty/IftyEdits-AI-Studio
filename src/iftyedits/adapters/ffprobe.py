@@ -174,3 +174,19 @@ def _float(value: object) -> float | None:
         except ValueError:
             return None
     return None
+
+
+class DeferredFFprobe:
+    """A :class:`FFprobe` that looks for the binary only when a file is probed.
+
+    For callers that mostly read stored probe results, so a missing ffprobe is reported by
+    the action that needs it instead of stopping the whole page.
+    """
+
+    def __init__(self, binary: str = "ffprobe", timeout_s: float = 60.0) -> None:
+        self.binary = binary
+        self.timeout_s = timeout_s
+
+    def probe(self, path: Path) -> MediaInfo:
+        """Probe ``path`` or raise ``ExternalToolError`` if ffprobe is not installed."""
+        return FFprobe(self.binary, self.timeout_s).probe(path)
