@@ -835,3 +835,21 @@ ran on self-made speech with the source unchanged; missing FFmpeg, missing model
 corrupt media were refused with clear messages; OSV reported no known vulnerabilities for the 68
 locked packages. Real Google: sign-in, channel read and token refresh worked; no upload yet.
 Added `docs/RELEASE_CHECKLIST.md` and corrected worker hints in the UI. Open items are listed there.
+
+## Face-aware cropping (2026-11-27, branch `feat/face-framing`)
+
+The crop now follows faces when the YuNet model is installed (`iftyedits models download yunet`),
+jumps at scene cuts and falls back to picture detail when a clip shows few faces (D36). The model
+(227 KB, MIT) was downloaded with the owner's approval and matched its pinned SHA-256.
+
+Verified on this Mac: full suite with FFmpeg 1328 passed, 1 skipped; Ruff, format and mypy clean;
+**Auto-frame** ran in the browser on scratch data. Real-media check on one 15-minute gameplay
+commentary video (scratch copy, `small` model): five Shorts exported in about 14 minutes while
+the machine was heavily loaded by other work. Face framing applied to two of the five and kept
+people in frame noticeably better on sampled frames; the other three showed too few faces and kept
+detail framing. Existing Shorts keep their crop until **Auto-frame** is pressed.
+
+Not verified: podcast, webcam, sports, slides, noisy and non-English footage; speaker switching in
+a two-person shot. Not built: speaker detection, split-screen layouts, analytics (Phase 8, left
+out of this round by the owner). The macOS CI failure on the Phase 7 pull request (two editor
+page tests needed `ffprobe`) was fixed on that branch on 2026-11-27.

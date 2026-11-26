@@ -218,7 +218,7 @@ bias toward moment types you favor). Nothing is cut, rendered or uploaded on thi
 
 The score is an algorithmic recommendation based on the transcript, loudness and scene
 changes. It does not predict views and does not check copyright, music rights or platform
-rules. Faces and speakers are not analysed.
+rules. Faces and speakers do not affect the score.
 
 ### Short editor
 
@@ -231,7 +231,15 @@ suggestion; edits are saved as settings for that one Short.
 - **Framing**: a 0 to 100 crop position (50 = centre). The crop keeps the full height and is
   never stretched. The page says which mode is active: *Auto-follow* (a smooth moving crop from
   **Auto-frame**) or *Manual or steady*. Moving the slider or changing the trim switches to
-  manual. The moving crop follows the busiest part of the picture; it does not recognise faces.
+  manual.
+- **Face-aware cropping**: install the model once with
+  `uv run iftyedits models download yunet` (227 KB). **Auto-frame** and one-click production then
+  follow faces, jump at scene cuts and pan slowly inside a shot. When two people do not fit, the
+  window stays on one until the other is clearly larger; it does not know who is speaking. Faces
+  shorter than 8% of the picture height are ignored, and clips with faces in fewer than a quarter
+  of the checked pictures are framed by picture detail. No one is identified and nothing about
+  faces is stored. Set `IFTYEDITS_FACE_FRAMING=false` to turn it off. Shorts you already framed
+  keep their crop until you press **Auto-frame** again.
 - **Captions**: on or off, presets (Classic, Boxed, Highlight, Minimal, Impact, Studio, Clean, Punchy, Cinematic, Mobile), key-word colouring, bold, size, colours,
   outline, background, alignment and position. The text box lists each caption line so you can
   correct wording; corrections are stored with the Short, not in the transcript. Highlight
@@ -264,9 +272,9 @@ Run any command as `uv run iftyedits <command>`. Use `--help` after a command fo
 | `enqueue PATH... [-r] [--process]` | Queue files or folders for the worker; `--process` also prepares media |
 | `worker [--once]` | Run queued jobs; `--once` exits when the queue is empty |
 | `process VIDEO... \| --all [--stage S] [--force]` | Queue media preparation |
-| `models [list]` | List speech models, sizes and whether they are downloaded |
-| `models download NAME` | Download and verify a speech model now, with progress |
-| `models verify NAME` | Re-hash an installed model's weights |
+| `models [list]` | List speech and face models, sizes and whether they are downloaded |
+| `models download NAME` | Download and verify a model now (speech, or `yunet` for faces) |
+| `models verify NAME` | Re-hash an installed model |
 | `transcribe VIDEO... \| --all [--model M] [--language L] [--force]` | Queue transcription |
 | `transcript VIDEO [--format txt\|srt\|vtt\|json] [--save]` | Print the current transcript, or save it under `data/exports/transcripts/` |
 | `analyze VIDEO... \| --all [--force]` | Queue clip analysis of transcribed videos |
@@ -378,11 +386,11 @@ Data folders (never committed to Git):
   no real podcast, sports, slides, noisy-recording or multilingual footage has been run. Clip
   suggestions are scored by explainable signals, not by how entertaining a clip is.
 - There is no uploading. Metadata and review need an optional AI model (Phase 6). HDR video is not tone-mapped. Automatic
-  framing follows image detail with a smooth moving crop; it is not face or speaker tracking.
-  Adjust the crop in the Short editor.
+  framing follows faces (with the face model) or image detail; it does not know who is speaking
+  and has no split-screen layout for gameplay with a webcam. Adjust the crop in the Short editor.
 - Link ingestion depends on yt-dlp and YouTube; if YouTube changes, update yt-dlp. Renders are made one at a time.
 - Clip scoring uses English wording cues (including boilerplate detection), transcript timings, loudness and scene changes.
-  It does not analyse faces, speakers or tone of voice, and suggestions can be previewed and
+  Scoring does not analyse faces, speakers or tone of voice, and suggestions can be previewed and
   trimmed in the Short editor.
 - Transcription runs on the CPU. On an M1 Max, `tiny` ran about 33x and `base` about 20x faster
   than real time; `small` is slower (not yet measured). See D16 in [DECISIONS.md](DECISIONS.md).

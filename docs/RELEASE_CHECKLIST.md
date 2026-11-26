@@ -62,4 +62,5 @@ or fonts.
   yt-dlp (Unlicense).
 - Speech models are downloaded on request from Hugging Face; read each model page's licence before
   redistributing a model.
+- The YuNet face model (OpenCV Zoo, MIT) is downloaded on request, pinned by revision and SHA-256.
 - The repository has no `LICENSE` file; `pyproject.toml` marks it Proprietary.

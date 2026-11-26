@@ -335,7 +335,10 @@ recommendations, not predictions. Fixture-based regression tests cover scoring.
 ---
 
 > **Status (2026-11-22):** Phases 3A-3C were delivered together as one slice; see D24 and
-> PROGRESS.md. Not built: face-aware reframing, transitions, contact sheets.
+> PROGRESS.md. Not built: transitions, contact sheets.
+>
+> **Update (2026-11-27):** face detection (2A.3) and face-guided cropping (3A) are implemented
+> (D36). Speaker tracking and split-screen layouts are not built.
 
 # Phase 3A — Vertical Reframing
 

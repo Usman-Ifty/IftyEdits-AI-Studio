@@ -591,3 +591,24 @@ job and then returned it to the queue.
 **Trade-offs.** "Healthy" means a Streamlit health check answers; another Streamlit app on the same
 port would look the same. A very small race remains if two launches happen at once. A worker killed
 without cleanup counts as active for up to 15 seconds.
+
+## D36 — Face-aware framing with YuNet on ONNX Runtime (2026-11-27)
+
+**Context.** Detail-based framing often missed the person in a clip. Face detection (roadmap 2A.3
+and 3A) had been deferred until a model could be verified.
+
+**Decision.** YuNet `face_detection_yunet_2023mar.onnx` (OpenCV Zoo, MIT, 232,589 bytes), pinned
+to a Hugging Face revision and SHA-256, downloaded only on request through the existing verified
+model store. It runs on the CPU with `onnxruntime`, already locked as a faster-whisper dependency
+and now declared directly. Decoding and non-maximum suppression are a small NumPy adapter. Shots
+are split at the stored scene cuts (and large picture changes), sampled about once per second,
+and smoothed by the existing path follower, which now jumps at cuts and keeps those jumps when
+thinning keyframes. This supersedes the "no face tracking" note in D25 and D26.
+
+**Alternatives.** OpenCV `FaceDetectorYN` would add a large dependency for the same model. Apple
+Vision needs the PyObjC bridge and would not be testable on the Linux CI runner.
+
+**Trade-offs.** No speaker detection: with two distant faces the window keeps one until the other
+is clearly larger. Small faces (under 8% of frame height) are ignored, so crowds and tiny webcam
+boxes do not steer the crop. Checked on stills from one gameplay video only; podcast and webcam
+footage still need a real-media review.
