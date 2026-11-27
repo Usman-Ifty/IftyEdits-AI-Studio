@@ -21,7 +21,7 @@ with an explainable algorithmic score on the **Clips** page. Nothing is rendered
 - macOS on Apple Silicon (Linux works for development and CI)
 - [uv](https://docs.astral.sh/uv/) (manages Python 3.12; system Python is not used)
 - FFmpeg and ffprobe on `PATH` (Homebrew)
-- FriBiDi (`brew install fribidi`), only for Hindi captions
+- FriBiDi (`brew install fribidi`), only for Hindi letters typed into captions
 - Disk space for speech models (74 MB to 2.9 GB each, downloaded only on request)
 
 ## Setup

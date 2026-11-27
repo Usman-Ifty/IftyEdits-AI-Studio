@@ -7,7 +7,7 @@ import threading
 import time
 import types
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -58,6 +58,8 @@ class FakeWhisperModel:
     segments: list[RawSegment] = field(default_factory=list)
     fail_during: bool = False
     calls: list[dict[str, Any]] = field(default_factory=list)
+    heard: str = "en"
+    """The language reported when none is asked for."""
 
     def transcribe(self, audio: Any, **kwargs: Any) -> tuple[Iterator[RawSegment], RawInfo]:
         self.calls.append({"audio": audio, **kwargs})
@@ -67,18 +69,22 @@ class FakeWhisperModel:
             if self.fail_during:
                 raise RuntimeError("decoder exploded")
 
-        return generate(), RawInfo()
+        return generate(), RawInfo(language=kwargs.get("language") or self.heard)
 
 
 @pytest.fixture
 def fake_engine(monkeypatch: pytest.MonkeyPatch) -> types.SimpleNamespace:
     loaded: list[FakeWhisperModel] = []
-    state = types.SimpleNamespace(loaded=loaded, load_error=None, segments=[], fail_during=False)
+    state = types.SimpleNamespace(
+        loaded=loaded, load_error=None, segments=[], fail_during=False, heard="en"
+    )
 
     def whisper_model(path: str, **kwargs: Any) -> FakeWhisperModel:
         if state.load_error is not None:
             raise state.load_error
-        model = FakeWhisperModel(path, kwargs, list(state.segments), state.fail_during)
+        model = FakeWhisperModel(
+            path, kwargs, list(state.segments), state.fail_during, heard=state.heard
+        )
         loaded.append(model)
         return model
 
@@ -128,6 +134,26 @@ def test_transcribe_converts_output_and_reports_segments(
     call = model.calls[0]
     assert call["language"] is None and call["word_timestamps"] and call["vad_filter"]
     assert call["task"] == "transcribe" and call["beam_size"] == 5
+
+
+@pytest.mark.parametrize(
+    ("heard", "asked", "calls"),
+    [("ur", None, [None, "hi"]), ("en", "ur", ["hi"]), ("hi", None, [None])],
+)
+def test_urdu_speech_is_written_as_hindi(
+    fake_engine: types.SimpleNamespace,
+    tmp_path: Path,
+    heard: str,
+    asked: str | None,
+    calls: list[str | None],
+) -> None:
+    fake_engine.heard = heard
+    fake_engine.segments = _segments()
+    out = adapter.FasterWhisperTranscriber().transcribe(
+        write_wav(tmp_path / "a.wav", 1.0), tmp_path / "small", replace(OPTIONS, language=asked)
+    )
+    assert out.language == "hi" and len(out.segments) == 2
+    assert [c["language"] for c in fake_engine.loaded[0].calls] == calls
 
 
 def test_model_is_cached_and_replaced_when_settings_change(

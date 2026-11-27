@@ -669,3 +669,22 @@ renderer. Drawing without shaping gives wrong letter order.
 **Trade-offs.** `streamlit run` started by hand does not get the library path, so Hindi previews
 there show the refusal; use `iftyedits ui`. Plain `uv run pytest` skips the three Hindi drawing
 tests. Other Indic scripts remain unsupported.
+
+## D40 — Hindi and Urdu speech written in Roman letters (2026-11-28)
+
+**Context.** The owner does not want Hindi letters: English stays English, and Hindi or Urdu speech
+must appear as Roman Urdu or Hinglish.
+
+**Decision.** A small rule-based converter (`core/romanize.py`) with a table of common words and
+English words that recognition writes in Devanagari. It is applied when transcripts, suggestions
+and Short titles are read, so captions, titles, transcript pages and subtitle downloads are Roman
+while the stored recognition result is unchanged. Speech detected as Urdu is recognised as Hindi,
+because Urdu script leaves out vowels. This supersedes D39 for what appears in captions; its
+Devanagari drawing now only applies to text typed by hand.
+
+**Alternatives.** Transliteration packages produce academic spelling and keep the silent vowels.
+Models that write Hinglish directly are large downloads and were not tried.
+
+**Trade-offs.** Spelling is approximate and misheard words stay misheard. There is no translation.
+Search finds Hindi words only when typed in Devanagari. Transcripts already stored in Urdu script
+stay in Urdu script until transcribed again.

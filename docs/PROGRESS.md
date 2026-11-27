@@ -915,3 +915,22 @@ The three Shorts were exported again in the chosen Boxed style; one frame of eac
 Hindi letters. Earlier exports were kept. Full suite with FFmpeg and shaping: 1405 passed, 1
 skipped. Not verified: the caption wording (speech recognition with `small` makes mistakes, so
 proofread before upload), other Indic scripts (still not supported) and right-to-left word order.
+
+## Roman captions for Hindi and Urdu (2026-11-28)
+
+The owner asked for English letters only. Hindi and Urdu speech is now shown in Roman letters
+(D40). The three Shorts were exported again; their caption text has no Hindi or Urdu characters,
+and one frame of each was checked. Full suite with FFmpeg and shaping: 1422 passed, 1 skipped.
+Not done: better recognition. The `small` model mishears many words in this video; a larger or
+Hinglish model needs the owner's approval to download. Urdu detection was tested with a fake
+engine only.
+
+### `large-v3-turbo` trial (2026-11-28)
+
+Downloaded with the owner's approval and verified. The full 29.5-minute video transcribed in about
+20 minutes. Compared on the three Short ranges: some sentences read better, but it found about half
+the words in two clips, kept one caption on screen for 17 seconds and invented a few foreign
+characters. Other settings on those ranges did not give a clearly better result. The `small`
+transcript was made current again and the Shorts exported from it; the turbo transcript is kept
+(Transcripts, **Version**). Added: removal of broken and non-Latin characters from Hindi
+transcripts. Full suite before the last line-wrap change: 1424 passed, 1 skipped.

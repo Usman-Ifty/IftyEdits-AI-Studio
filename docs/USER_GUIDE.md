@@ -19,7 +19,7 @@ You need a Mac (Apple Silicon recommended), [uv](https://docs.astral.sh/uv/) and
 
 ```bash
 brew install ffmpeg      # provides ffmpeg and ffprobe
-brew install fribidi     # only needed for Hindi captions
+brew install fribidi     # only needed if you type Hindi letters into captions yourself
 ```
 
 Then, in the project folder:
@@ -250,9 +250,9 @@ suggestion; edits are saved as settings for that one Short.
 - **Captions**: on or off, presets (Classic, Boxed, Highlight, Minimal, Impact, Studio, Clean, Punchy, Cinematic, Mobile), key-word colouring, bold, size, colours,
   outline, background, alignment and position. The text box lists each caption line so you can
   correct wording; corrections are stored with the Short, not in the transcript. Highlight
-  only works when the transcript has word timing. Hindi captions need FriBiDi (see Set up) and
-  the studio started with `iftyedits`; proofread them, because recognition makes mistakes.
-  Other Indian scripts are not supported yet.
+  only works when the transcript has word timing. Hindi and Urdu speech is written in Roman
+  letters (for example `kya baat hai`); it is not translated, so proofread it. Hindi letters you
+  type yourself need FriBiDi (see Set up). Other Indian scripts are not supported yet.
 - **Look and sound**: fade in/out, brightness, contrast, saturation; keep or drop audio,
   volume, sound fades, and optional loudness evening (about -16 LUFS).
 - **Output**: 1080x1920 (recommended), 720p or 540p, and quality. Smaller sources are scaled
@@ -404,6 +404,7 @@ Data folders (never committed to Git):
   trimmed in the Short editor.
 - Transcription runs on the CPU. On an M1 Max, `tiny` ran about 33x and `base` about 20x faster
   than real time; `small` is slower (not yet measured). See D16 in [DECISIONS.md](DECISIONS.md).
+- Hindi and Urdu appear in Roman letters. To search for a Hindi word, type it in Hindi letters.
 - One language per transcript. Speech that switches languages is transcribed in the detected
   (or chosen) language. There is no speaker separation.
 - Search matches whole words and word beginnings, separated by spaces or punctuation. Languages

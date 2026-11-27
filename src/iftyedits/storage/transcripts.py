@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -23,6 +23,7 @@ from iftyedits.core.models import (
     TranscriptSegment,
     TranscriptWord,
 )
+from iftyedits.core.romanize import contains_devanagari, latin_only, romanize
 from iftyedits.storage.db import transaction, utc_now
 from iftyedits.storage.processing import assert_job_owned
 
@@ -64,18 +65,52 @@ def _transcript(row: sqlite3.Row) -> Transcript:
     )
 
 
-def _segment(row: sqlite3.Row, words: tuple[TranscriptWord, ...] = ()) -> StoredSegment:
+def _spoken_text(language: str | None) -> Callable[[str], str]:
+    """How stored text of a transcript in ``language`` is shown: always in Roman letters."""
+    if language == "hi":
+        return lambda text: latin_only(romanize(text))
+    return romanize
+
+
+def _segment(
+    row: sqlite3.Row,
+    words: tuple[TranscriptWord, ...] = (),
+    shown: Callable[[str], str] = romanize,
+) -> StoredSegment:
     return StoredSegment(
         id=row["id"],
         transcript_id=row["transcript_id"],
         position=row["position"],
         start_s=row["start_s"],
         end_s=row["end_s"],
-        text=row["text"],
+        text=shown(row["text"]),
         avg_logprob=row["avg_logprob"],
         no_speech_prob=row["no_speech_prob"],
         words=words,
     )
+
+
+def _roman_snippet(snippet: str) -> str:
+    """A search snippet in Roman letters, with each matched word marked as a whole.
+
+    The index can mark part of a Hindi word; converting the two halves apart would
+    misspell it, so the marks are moved to the edges of the word first.
+    """
+    if not contains_devanagari(snippet):
+        return snippet
+    pieces: list[str] = []
+    inside = False
+    for piece in re.split(r"(\s+)", snippet):
+        marked = inside or SEARCH_MATCH_START in piece
+        opened = piece.rfind(SEARCH_MATCH_START)
+        closed = piece.rfind(SEARCH_MATCH_END)
+        if max(opened, closed) >= 0:
+            inside = opened > closed
+        word = romanize(piece.replace(SEARCH_MATCH_START, "").replace(SEARCH_MATCH_END, ""))
+        if marked and word.strip():
+            word = f"{SEARCH_MATCH_START}{word}{SEARCH_MATCH_END}"
+        pieces.append(word)
+    return "".join(pieces)
 
 
 def match_expression(query: str) -> str | None:
@@ -275,6 +310,10 @@ class TranscriptRepository:
             "WHERE transcript_id = ? ORDER BY position",
             (transcript_id,),
         ).fetchall()
+        found = self.conn.execute(
+            "SELECT language FROM transcripts WHERE id = ?", (transcript_id,)
+        ).fetchone()
+        shown = _spoken_text(found[0] if found else None)
         words: dict[int, list[TranscriptWord]] = {}
         if with_words:
             for w in self.conn.execute(
@@ -284,9 +323,9 @@ class TranscriptRepository:
                 (transcript_id,),
             ):
                 words.setdefault(w["segment_id"], []).append(
-                    TranscriptWord(w["start_s"], w["end_s"], w["text"], w["probability"])
+                    TranscriptWord(w["start_s"], w["end_s"], shown(w["text"]), w["probability"])
                 )
-        return [_segment(r, tuple(words.get(r["id"], ()))) for r in rows]
+        return [_segment(r, tuple(words.get(r["id"], ())), shown) for r in rows]
 
     def search(
         self, query: str, *, video_id: int | None = None, limit: int = 50
@@ -324,8 +363,8 @@ class TranscriptRepository:
                 position=r["position"],
                 start_s=r["start_s"],
                 end_s=r["end_s"],
-                text=r["text"],
-                snippet=r["snippet"],
+                text=romanize(r["text"]),
+                snippet=_roman_snippet(r["snippet"]),
             )
             for r in rows
         ]
