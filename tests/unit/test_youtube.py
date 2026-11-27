@@ -56,6 +56,7 @@ class Google:
         self.videos: list[dict[str, object]] = []  # videos.list items
         self.report: dict[str, object] = {}
         self.report_status = 200
+        self.traffic: dict[str, object] = {}
         google = self
 
         class H(http.server.BaseHTTPRequestHandler):
@@ -110,7 +111,8 @@ class Google:
                     found = [v for v in google.videos if v["id"] in wanted]
                     return self._send(200, json.dumps({"items": found}).encode())
                 if parsed.path == "/v2/reports":
-                    reply = json.dumps(google.report).encode()
+                    traffic = query["dimensions"][0] == "insightTrafficSourceType"
+                    reply = json.dumps(google.traffic if traffic else google.report).encode()
                     return self._send(google.report_status, reply)
                 self._send(404)
 

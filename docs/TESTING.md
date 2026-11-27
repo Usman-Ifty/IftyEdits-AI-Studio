@@ -121,6 +121,16 @@ Set `IFTYEDITS_REQUIRE_FFMPEG=1` to turn that skip into a failure, as CI does:
 IFTYEDITS_REQUIRE_FFMPEG=1 uv run pytest -m "ffmpeg or slow"
 ```
 
+### Hindi caption tests
+
+Three tests draw Hindi and are skipped unless Python can load FriBiDi (`brew install fribidi`):
+
+```bash
+DYLD_FALLBACK_LIBRARY_PATH=/usr/local/lib:/usr/lib:/opt/homebrew/lib .venv/bin/python -m pytest tests/unit/test_caption_hindi.py
+```
+
+Call `.venv/bin/python` directly: macOS drops the variable when a protected program starts it.
+
 ### Opt-in real-model test
 
 `tests/integration/test_transcription_ffmpeg.py::test_real_model_transcribes_speech` synthesises

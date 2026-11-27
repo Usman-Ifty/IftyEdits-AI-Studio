@@ -8,19 +8,26 @@ export, so what you see is what is rendered.
 Fonts are looked up in a short list of system locations. The first one that exists and
 covers the text's script is used; if none is found Pillow's built-in font is used (Latin
 only, and the editor says so). No font file is bundled.
+
+Devanagari (Hindi, Marathi, Nepali) also needs complex text shaping, which Pillow does
+through Raqm and the FriBiDi library. Without it the letters come out in the wrong order, so
+captions are refused with a message instead. On macOS, Python does not search Homebrew's
+library folder by itself; see :func:`shaping_environment`.
 """
 
 from __future__ import annotations
 
 import functools
+import sys
 import unicodedata
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, features
 
 from iftyedits.core.captions import CaptionCue, emphasis_indexes
+from iftyedits.core.errors import ShortRenderError
 from iftyedits.core.shorts import SAFE_BOTTOM, SAFE_SIDE, SAFE_TOP, CaptionStyle
 
 _BOLD_FONTS = (
@@ -52,6 +59,25 @@ _ARABIC_HEBREW = (
     ("/System/Library/Fonts/GeezaPro.ttc", 0),
     ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 0),
 )
+_DEVANAGARI_FONTS = (  # (file, regular face, bold face)
+    ("/System/Library/Fonts/Kohinoor.ttc", 0, 3),
+    ("/System/Library/Fonts/Supplemental/Devanagari Sangam MN.ttc", 0, 1),
+    ("/System/Library/Fonts/Supplemental/DevanagariMT.ttc", 0, 1),
+)
+_DEVANAGARI_FILES = (  # (regular file, bold file)
+    (
+        "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Bold.ttf",
+    ),
+)
+_DEVANAGARI_RANGES = ((0x0900, 0x097F), (0xA8E0, 0xA8FF))
+_HOMEBREW_LIB = Path("/opt/homebrew/lib")
+_DYLD_VARIABLE = "DYLD_FALLBACK_LIBRARY_PATH"
+SHAPING_HELP = (
+    "Hindi captions need the FriBiDi library to draw letters correctly. Run "
+    "`brew install fribidi`, restart the studio with `uv run iftyedits ui`, then export "
+    "again. You can also turn captions off for this Short."
+)
 Font = ImageFont.FreeTypeFont | ImageFont.ImageFont
 Color = tuple[int, int, int, int]
 
@@ -59,6 +85,47 @@ Color = tuple[int, int, int, int]
 def _rgba(hex_color: str, alpha: int = 255) -> Color:
     value = hex_color.lstrip("#")
     return (int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16), alpha)
+
+
+def shaping_environment(
+    env: Mapping[str, str], *, platform: str = sys.platform, library_dir: Path = _HOMEBREW_LIB
+) -> dict[str, str] | None:
+    """``env`` extended so a new process can load Homebrew's FriBiDi, or ``None``.
+
+    macOS reads the variable only when a process starts, so the caller must start (or
+    restart) a process with the result. ``None`` means there is nothing to change.
+    """
+    if platform != "darwin" or not (library_dir / "libfribidi.dylib").is_file():
+        return None
+    current = env.get(_DYLD_VARIABLE) or "/usr/local/lib:/usr/lib"
+    folders = current.split(":")
+    if str(library_dir) in folders:
+        return None
+    return {**env, _DYLD_VARIABLE: ":".join([*folders, str(library_dir)])}
+
+
+def shaping_available() -> bool:
+    """True when Pillow can shape complex scripts (Raqm with FriBiDi loaded)."""
+    return bool(features.check("raqm"))
+
+
+def _is_devanagari(text: str) -> bool:
+    return any(low <= ord(c) <= high for c in text for low, high in _DEVANAGARI_RANGES)
+
+
+def _devanagari_font(size: int, bold: bool) -> Font:
+    if not shaping_available():
+        raise ShortRenderError(SHAPING_HELP)
+    for path, regular, heavy in _DEVANAGARI_FONTS:
+        if Path(path).is_file():
+            return _load(path, heavy if bold else regular, size)
+    for regular_file, bold_file in _DEVANAGARI_FILES:
+        path = bold_file if bold else regular_file
+        if Path(path).is_file():
+            return _load(path, 0, size)
+    raise ShortRenderError(
+        "No installed font can draw Hindi captions. Turn captions off for this Short."
+    )
 
 
 def _needs_wide_script(text: str) -> str:
@@ -88,7 +155,12 @@ def _load(path: str, index: int, size: int) -> Font:
 
 
 def find_font(size: int, *, bold: bool, text: str = "") -> tuple[Font, str]:
-    """A font for ``text`` and a note on what was used (``''`` for the normal case)."""
+    """A font for ``text`` and a note on what was used (``''`` for the normal case).
+
+    Raises :class:`ShortRenderError` for Devanagari text that cannot be drawn correctly.
+    """
+    if _is_devanagari(text):
+        return _devanagari_font(size, bold), ""
     script = _needs_wide_script(text)
     if script:
         choices = _WIDE_SCRIPT_FONTS if script == "cjk" else _ARABIC_HEBREW
@@ -198,6 +270,10 @@ def render_cue(
     ascent, descent = (size, size // 4)
     if isinstance(metrics.base, ImageFont.FreeTypeFont):
         ascent, descent = metrics.base.getmetrics()
+    for font in (metrics.font(w) for w in words if _is_devanagari(w)):
+        if isinstance(font, ImageFont.FreeTypeFont):  # marks above and below need more room
+            ascent = max(ascent, font.getmetrics()[0])
+            descent = max(descent, font.getmetrics()[1])
     line_h = int((ascent + descent) * 1.12)
     pad = round(22 * scale) if style.background == "box" else 0
     block_w = int(widest) + 2 * pad + 2 * outline

@@ -57,6 +57,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if i
             ]
             return self._send(200, json.dumps({"items": videos}).encode())
+        if parsed.path == "/v2/reports" and q["dimensions"][0] == "insightTrafficSourceType":
+            report = {
+                "columnHeaders": [{"name": "insightTrafficSourceType"}, {"name": "views"}],
+                "rows": [["SHORTS", 90], ["YT_SEARCH", 20], ["EXT_URL", 10]],
+            }
+            return self._send(200, json.dumps(report).encode())
         if parsed.path == "/v2/reports":
             ids = q["filters"][0].removeprefix("video==").split(",")
             names = ["video", *q["metrics"][0].split(",")]

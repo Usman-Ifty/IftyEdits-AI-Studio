@@ -13,7 +13,7 @@ from iftyedits.services.analytics import AnalyticsService, build_analytics_servi
 from iftyedits.storage.db import open_database
 from iftyedits.storage.shorts import ShortRepository
 from iftyedits.ui import theme
-from iftyedits.ui.analytics import comparison_rows, video_rows
+from iftyedits.ui.analytics import comparison_rows, traffic_rows, video_rows
 
 settings = Settings.from_env()
 FLASH = "analytics-flash"
@@ -87,6 +87,12 @@ else:
         "Views, likes and comments are lifetime totals at the time of the last refresh. Watch "
         "time and retention cover the window shown and arrive a few days late."
     )
+    with_traffic = {f"{v.title or v.video_id} ({v.video_id})": v for v in videos if v.traffic}
+    if with_traffic:
+        st.subheader("Where viewers came from")
+        chosen = with_traffic[st.selectbox("Video", list(with_traffic), key="analytics-traffic")]
+        st.dataframe(traffic_rows(chosen), hide_index=True, width="stretch")
+        st.caption(f"Views from {chosen.window_start} to {chosen.window_end}.")
     st.subheader("What seems to work")
     st.caption(
         "Medians per editing choice, with the number of videos behind each. Small samples "

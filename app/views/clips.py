@@ -9,7 +9,7 @@ import streamlit as st
 from iftyedits.config import Settings
 from iftyedits.core.clip_models import ClipCandidate, ClipDecision
 from iftyedits.core.models import CancelOutcome, Job, JobStatus, Video
-from iftyedits.pipeline.jobs import ANALYZE_CLIPS, JobQueue
+from iftyedits.pipeline.jobs import ANALYZE_CLIPS, TRANSCRIBE_VIDEO, JobQueue
 from iftyedits.services.shorts import build_short_service
 from iftyedits.storage.clips import ClipRepository
 from iftyedits.storage.db import open_database
@@ -96,6 +96,40 @@ def analysis_status(video: Video) -> None:
         st.caption(f"Analysis job {latest.id} was cancelled. Earlier results are unchanged.")
 
 
+@st.fragment(run_every=2)
+def transcription_status(video: Video) -> None:
+    """Start or follow this video's transcription without leaving the page."""
+    with closing(open_database(settings.db_path)) as conn:
+        queue = JobQueue(conn)
+        busy = [j for j in queue.list_active() if j.video_id == video.id]
+        latest = queue.latest(TRANSCRIBE_VIDEO, video.id)
+        workers = queue.live_workers()
+        done = video.id in TranscriptRepository(conn).current_by_video()
+    if done:
+        st.rerun()
+    if busy:
+        job = busy[0]
+        st.progress(
+            min(1.0, max(0.0, job.progress)),
+            text=f"Job {job.id} is {job_status_label(job)}: "
+            f"{job.message or 'waiting for a worker'}",
+        )
+        if not workers:
+            st.warning("No worker is running. Start `uv run iftyedits worker`.")
+        return
+    if latest is not None and latest.status is JobStatus.FAILED:
+        st.error(f"Transcription job {latest.id} failed: {latest.error}")
+    if st.button("Transcribe this video", key=f"clips-transcribe-{video.id}", type="primary"):
+        language = settings.transcription_language
+        with closing(open_database(settings.db_path)) as conn:
+            JobQueue(conn).enqueue_transcription(
+                video.id,
+                model=settings.transcription_model,
+                language=None if language == "auto" else language,
+            )
+        st.rerun()
+
+
 with closing(open_database(settings.db_path)) as conn:
     videos = VideoRepository(conn).list_recent()
     transcripts = TranscriptRepository(conn).current_by_video()
@@ -106,12 +140,17 @@ if not videos:
     chrome.halt()
 
 labels = {f"#{v.id}  {v.original_filename}": v for v in videos}
-video = labels[st.selectbox("Video", list(labels), key="clips-video")]
+# Open on the newest video that can show suggestions, not on one still waiting for a transcript.
+ready = next((i for i, v in enumerate(videos) if v.id in transcripts), 0)
+video = labels[st.selectbox("Video", list(labels), index=ready, key="clips-video")]
 transcript = transcripts.get(video.id)
 
 _show_flash()
 if transcript is None:
-    st.warning("This video has no transcript yet. Transcribe it in My Videos > Transcripts first.")
+    st.warning(
+        "This video has no transcript yet. Transcribe it here or in My Videos > Transcripts."
+    )
+    transcription_status(video)
     chrome.halt()
 if transcript.is_empty:
     st.warning("The transcript has no speech, so there is nothing to analyse.")
@@ -163,6 +202,26 @@ if not candidates:
         "this. Try a video with more speech."
     )
     chrome.halt()
+
+favorites = [c for c in candidates if c.decision is ClipDecision.FAVORITE]
+if favorites and st.button(
+    f"Export favourites ({len(favorites)})",
+    key=f"clips-export-fav-{video.id}",
+    icon=":material/movie:",
+    help="Queues one MP4 per favourite with its saved settings. Open a clip with Edit first "
+    "to change its framing or captions.",
+):
+    with closing(open_database(settings.db_path)) as conn:
+        batch = build_short_service(settings, conn).export_candidates(
+            video.id, [c.key for c in favorites]
+        )
+    summary = f"Queued {batch.queued} export(s)."
+    if batch.reused:
+        summary += f" {batch.reused} already finished or running."
+    _flash("success" if not batch.failed else "info", summary)
+    for _, reason in batch.failed:
+        _flash("info", f"One clip was not queued: {reason}")
+    st.rerun()
 
 present = sorted({c.category for c in candidates})
 filters = st.expander("Sort and filter")

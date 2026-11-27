@@ -29,7 +29,7 @@ from iftyedits.services.youtube_upload import YouTubeUploadService
 from iftyedits.storage.analytics import AnalyticsRepository
 from iftyedits.storage.db import open_database
 from iftyedits.storage.shorts import ShortProject
-from iftyedits.ui.analytics import comparison_rows, video_rows
+from iftyedits.ui.analytics import comparison_rows, traffic_rows, video_rows
 from tests.unit.test_phase69_validation import export, project, video  # noqa: F401
 from tests.unit.test_youtube import Google, google, make_client  # noqa: F401
 
@@ -369,6 +369,57 @@ def test_unknown_numbers_show_a_dash(db_conn: sqlite3.Connection) -> None:
     [row] = video_rows(repo.latest())
     assert row["Views"] == "-" and row["Refreshed (UTC)"] == "never" and row["Video"] == MINE
     assert comparison_rows(an.compare(samples("a", 1, 10), "category"))[0]["Videos"] == "1"
+
+
+# ------------------------------------------------------------------ traffic sources
+
+
+def traffic(*rows: list[object]) -> dict[str, object]:
+    headers = [{"name": "insightTrafficSourceType"}, {"name": "views"}]
+    return {"columnHeaders": headers, "rows": list(rows)}
+
+
+def test_parse_traffic_sorts_and_skips_junk() -> None:
+    payload = traffic(["YT_SEARCH", 5], ["SHORTS", 40], ["BAD"], ["", 3], ["EXT_URL", "x"])
+    assert an.parse_traffic(payload) == (("SHORTS", 40), ("YT_SEARCH", 5))
+
+
+@pytest.mark.parametrize("payload", [{}, traffic(), {"columnHeaders": [], "rows": [[1]]}])
+def test_parse_traffic_without_data(payload: dict[str, object]) -> None:
+    assert an.parse_traffic(payload) == ()
+
+
+def test_unknown_traffic_source_is_still_named() -> None:
+    assert an.traffic_label("SHORTS") == "Shorts feed"
+    assert an.traffic_label("NEW_THING") == "New thing"
+
+
+def test_refresh_stores_traffic_sources_per_video(
+    configured: Settings, db_conn: sqlite3.Connection, google: Google, tmp_path: Path
+) -> None:
+    google.videos = [item(MINE), item(OTHER, channel="UCsomeoneelse")]
+    google.report = report(MINE)
+    google.traffic = traffic(["YT_SEARCH", 10], ["SHORTS", 30])
+    service = make_analytics(configured, db_conn, google, tmp_path)
+    service.add_video(MINE)
+    service.add_video(OTHER)
+    service.refresh(7)
+    rows = {v.video_id: v for v in service.videos()}
+    assert rows[MINE].traffic == (("SHORTS", 30), ("YT_SEARCH", 10))
+    assert rows[OTHER].traffic == ()
+    assert traffic_rows(rows[MINE])[0] == {"Source": "Shorts feed", "Views": "30", "Share": "75%"}
+    asked = [p for _, p, _, _ in google.requests if "insightTrafficSourceType" in p]
+    assert len(asked) == 1 and MINE in asked[0] and "maxResults" not in asked[0]
+
+
+def test_no_traffic_request_without_the_optional_permission(
+    configured: Settings, db_conn: sqlite3.Connection, google: Google, tmp_path: Path
+) -> None:
+    google.videos = [item(MINE)]
+    service = make_analytics(configured, db_conn, google, tmp_path, detailed=False)
+    service.add_video(MINE)
+    service.refresh()
+    assert google.count("GET", "/v2/reports") == 0 and service.videos()[0].traffic == ()
 
 
 # ------------------------------------------------------------------ page and CLI

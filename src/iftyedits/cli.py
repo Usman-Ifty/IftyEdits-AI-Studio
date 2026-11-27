@@ -19,6 +19,7 @@ from pathlib import Path
 from types import FrameType
 
 from iftyedits import __version__
+from iftyedits.adapters.caption_render import shaping_environment
 from iftyedits.adapters.faster_whisper import engine_version
 from iftyedits.adapters.ffmpeg import FFmpeg
 from iftyedits.adapters.ffprobe import FFprobe
@@ -1078,9 +1079,19 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _restart_for_text_shaping() -> None:
+    """Restart once so Hindi captions can load FriBiDi; child processes inherit the setting."""
+    env = shaping_environment(os.environ)
+    if env is not None:
+        command = [sys.executable, "-m", "iftyedits.cli", *sys.argv[1:]]
+        os.execve(sys.executable, command, env)  # noqa: S606 - our own interpreter, fixed argv
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Entry point."""
     args = build_parser().parse_args(argv)
+    if argv is None:  # the real command line, not an in-process call
+        _restart_for_text_shaping()
     try:
         settings = Settings.from_env()
     except ValueError as exc:

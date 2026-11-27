@@ -19,6 +19,7 @@ You need a Mac (Apple Silicon recommended), [uv](https://docs.astral.sh/uv/) and
 
 ```bash
 brew install ffmpeg      # provides ffmpeg and ffprobe
+brew install fribidi     # only needed for Hindi captions
 ```
 
 Then, in the project folder:
@@ -79,7 +80,8 @@ package. **Edit** on a candidate opens it in the Edit Short step.
 
 ### Dashboard
 
-- Two shortcuts: **Make Shorts** and **Watch and download**.
+- Two shortcuts: **Make Shorts** and **Watch and upload**.
+- **Working now**: a progress bar for each running or queued job, with a **See progress** link.
 - Worker status: **Ready**, the number of jobs in progress, or a warning when no worker runs.
 - A notice when videos still need media preparation or a preparation stage failed.
 - Recent videos and recent exports.
@@ -102,7 +104,9 @@ welcome box on the Dashboard has a **Hide this welcome** button that stays hidde
 4. **Produce Shorts** runs the whole pipeline in one job. **Download only** just fetches and
    imports the video. A link already downloaded is reused, not downloaded again.
 5. Follow it on **Processing Queue**; when finished, the per-clip summary shows status, length, size and
-   output path. **Finished Shorts** shows every finished MP4 as a gallery card with a Preview button and its file location.
+   output path. **Finished Shorts** shows the newest MP4 of each Short as a card with a picture. **Preview** plays
+   it over the page, **Review upload package** opens its checklist, and **File location** shows the
+   path. Turn on **Show older versions** to see earlier exports.
 
 The same pipeline is available from the **Library** page (**Produce Shorts** per video) and
 the CLI (`iftyedits produce`). Each clip is its own file; one failing clip does not affect the
@@ -191,7 +195,8 @@ the matching text in bold. Only the current (★) transcript of each video is se
 Finds moments in a transcribed video that may work as Shorts. It needs the video's transcript
 (see Transcripts) and a running worker (`uv run iftyedits ui` starts one).
 
-1. Pick a **Video**. Videos without a transcript show a warning.
+1. Pick a **Video**. The page opens on the newest video that has a transcript. For a video
+   without one, press **Transcribe this video** (it uses the configured model and language).
 2. Press **Find clips**. The panel shows the job's progress and a **Cancel analysis** button.
    **Analyse again** recomputes even when nothing changed.
 3. When the job ends, **Suggestions** lists up to 20 ranked clips. Pressing **Update
@@ -218,6 +223,10 @@ The score is an algorithmic recommendation based on the transcript, loudness and
 changes. It does not predict views and does not check copyright, music rights or platform
 rules. Faces and speakers do not affect the score.
 
+**Export favourites** queues one MP4 for every favourite clip of the video, using each clip's
+saved settings. To change framing or captions, open the clip with **Edit** first. A clip that
+cannot be queued is listed with the reason; the others still export.
+
 ### Short editor
 
 Turns a suggested clip into a vertical MP4. Open it from **Clips** with **Edit as a Short**, or
@@ -241,7 +250,9 @@ suggestion; edits are saved as settings for that one Short.
 - **Captions**: on or off, presets (Classic, Boxed, Highlight, Minimal, Impact, Studio, Clean, Punchy, Cinematic, Mobile), key-word colouring, bold, size, colours,
   outline, background, alignment and position. The text box lists each caption line so you can
   correct wording; corrections are stored with the Short, not in the transcript. Highlight
-  only works when the transcript has word timing.
+  only works when the transcript has word timing. Hindi captions need FriBiDi (see Set up) and
+  the studio started with `iftyedits`; proofread them, because recognition makes mistakes.
+  Other Indian scripts are not supported yet.
 - **Look and sound**: fade in/out, brightness, contrast, saturation; keep or drop audio,
   volume, sound fades, and optional loudness evening (about -16 LUFS).
 - **Output**: 1080x1920 (recommended), 720p or 540p, and quality. Smaller sources are scaled
@@ -383,7 +394,8 @@ Data folders (never committed to Git):
   speech tests so far used synthetic voices (Spanish and German included) and generated video;
   no real podcast, sports, slides, noisy-recording or multilingual footage has been run. Clip
   suggestions are scored by explainable signals, not by how entertaining a clip is.
-- There is no uploading. Metadata and review need an optional AI model (Phase 6). HDR video is not tone-mapped. Automatic
+- Uploading is optional, Private or Unlisted only, and has not been verified with a real upload.
+  AI drafting of metadata and reviews needs an optional model; without it you write them. HDR video is not tone-mapped. Automatic
   framing follows faces (with the face model) or image detail; it does not know who is speaking
   and has no split-screen layout for gameplay with a webcam. Adjust the crop in the Short editor.
 - Link ingestion depends on yt-dlp and YouTube; if YouTube changes, update yt-dlp. Renders are made one at a time.
@@ -426,6 +438,10 @@ or shows the Dashboard welcome card.
    project ([YOUTUBE.md](YOUTUBE.md)). Choose a window of 7, 28, 90 or 365 days. These numbers
    arrive a few days late.
 
+With detailed analytics allowed, **Where viewers came from** lists each traffic source (for
+example Shorts feed or YouTube search) with its views and share. One refresh asks this for the
+25 most recently followed videos.
+
 **What seems to work** groups your videos by moment type, caption style, length and framing, and
 shows medians with the number of videos behind each. It compares groups only when at least two
 hold five videos each. A pattern is not proof that the choice caused it, and nothing changes
@@ -437,7 +453,8 @@ The same is available as `iftyedits analytics [list|add|refresh]`.
 ## Upload package (Phase 6)
 
 Open **Clip Editor → Upload package**, or **Finished Shorts → Review upload package**. Pick a
-Short, then work through the tabs: **Metadata** (generate or write title, description, hashtags,
+Short. The page names the next tab to open and lists everything still left. Work through
+the tabs: **Metadata** (generate or write title, description, hashtags,
 search tags; copy boxes), **Thumbnail** (pick a real frame), **Safety review** (run the advisory
 review or record your own), **Rights** (what you know about the source), **Checklist** (your
 choices and confirmations, then the final confirm), **Package** (save JSON or TXT).

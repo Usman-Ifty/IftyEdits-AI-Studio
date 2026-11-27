@@ -75,7 +75,14 @@ then use **Analytics → Allow detailed analytics**. Without it the page still s
 Reconnecting from Settings grants only the upload permissions again.
 
 The report is requested for `channel==MINE`, one row per video, at most 200 videos per request.
-YouTube omits the rows when it has no data yet. References: developers.google.com/youtube/analytics
+YouTube omits the rows when it has no data yet.
+
+Traffic sources use the same permission: `reports.query` with the dimension
+`insightTrafficSourceType`, the metric `views` and the filter `video==ID`. It is one request per
+video, for at most the 25 most recently followed videos on each refresh. A failure is shown as a
+note and the other numbers are still stored.
+
+References for both reports: developers.google.com/youtube/analytics
 (reports.query, channel reports) and developers.google.com/youtube/v3/docs/videos/list, read
 2026-11-27. **Not verified against real Google**; only the local stub and tests exercise it.
 

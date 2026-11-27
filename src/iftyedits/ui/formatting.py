@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+from collections.abc import Mapping
+from pathlib import PurePath
 from typing import Any
 
 from iftyedits.core.clip_models import ClipAnalysis
@@ -27,6 +30,7 @@ from iftyedits.core.models import (
 )
 
 _UNITS = ("B", "KB", "MB", "GB", "TB")
+_DOWNLOAD_ID = re.compile(r"[-_ ](?=[A-Za-z0-9_-]*[0-9_])(?=[A-Za-z0-9_-]*[A-Z])[A-Za-z0-9_-]{11}$")
 
 
 def human_size(size: int) -> str:
@@ -109,8 +113,20 @@ def utc_short(timestamp: str | None) -> str:
     return timestamp[:19].replace("T", " ") if timestamp else ""
 
 
-def job_target(job: Job) -> str:
-    """What a job works on: a file name for imports, a video id for processing."""
+def video_title(filename: str) -> str:
+    """A file name as a readable title: no extension, download id or underscores."""
+    stem = PurePath(filename).stem
+    stem = _DOWNLOAD_ID.sub("", stem) or stem
+    return " ".join(stem.replace("_", " ").replace("-", " ").split()) or filename
+
+
+def job_target(job: Job, names: Mapping[int, str] | None = None) -> str:
+    """What a job works on: a file or video name when known, otherwise its id or link."""
+    video_id: object = job.video_id
+    if video_id is None and job.result:
+        video_id = job.result.get("video_id")  # a link job learns its video while running
+    if names and isinstance(video_id, int) and video_id in names:
+        return video_title(names[video_id])
     if "path" in job.payload:
         return str(job.payload["path"]).rsplit("/", 1)[-1] or "-"
     if "url" in job.payload:
@@ -153,12 +169,12 @@ def job_outcome(job: Job) -> str:
     return ""
 
 
-def job_row(job: Job) -> dict[str, Any]:
+def job_row(job: Job, names: Mapping[int, str] | None = None) -> dict[str, Any]:
     """One job table row."""
     return {
         "ID": job.id,
         "Kind": JOB_KIND_LABELS.get(job.kind, job.kind),
-        "File": job_target(job),
+        "File": job_target(job, names),
         "Status": job_status_label(job),
         "Outcome": job_outcome(job),
         "Progress": job.progress,

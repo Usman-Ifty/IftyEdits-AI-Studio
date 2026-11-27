@@ -30,6 +30,7 @@ from iftyedits.storage.shorts import ShortRepository
 from iftyedits.storage.videos import VideoRepository
 from iftyedits.ui import chrome, theme, youtube_panel
 from iftyedits.ui.formatting import utc_short
+from iftyedits.ui.publish import remaining_steps
 from iftyedits.ui.shorts import clock
 
 settings = Settings.from_env()
@@ -119,6 +120,16 @@ with closing(open_database(settings.db_path)) as conn:
             st.caption("Writing and review by hand still work. Settings has the AI setup.")
         else:
             st.markdown(theme.pill(f"AI: {service.model.name}", "accent"), unsafe_allow_html=True)
+
+    todo = remaining_steps(report.items)
+    if todo:
+        total = sum(len(labels) for _, labels in todo)
+        where = "step" if todo[0][0] == "Edit Short" else "tab"
+        st.info(f"**Next:** open the **{todo[0][0]}** {where}. {total} thing(s) left.")
+        with st.expander("Everything that is left, in order"):
+            for tab, labels in todo:
+                st.markdown(f"**{tab}**")
+                st.markdown("\n".join(f"- {label}" for label in labels))
 
     if not ctx.has_speech:
         st.warning(

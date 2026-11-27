@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from iftyedits.core.analytics import Comparison
+from iftyedits.core.analytics import Comparison, traffic_label
 from iftyedits.storage.analytics import TrackedVideo
 from iftyedits.ui.formatting import utc_short
 
@@ -37,6 +37,19 @@ def video_rows(videos: Sequence[TrackedVideo]) -> list[dict[str, Any]]:
         )
     # one type per column keeps the table renderer happy
     return [{key: str(value) for key, value in row.items()} for row in rows]
+
+
+def traffic_rows(video: TrackedVideo) -> list[dict[str, str]]:
+    """Where one video's views came from, with each source's share."""
+    total = sum(views for _, views in video.traffic)
+    return [
+        {
+            "Source": traffic_label(source),
+            "Views": f"{views:,}",
+            "Share": f"{views / total:.0%}" if total else "-",
+        }
+        for source, views in video.traffic
+    ]
 
 
 def comparison_rows(comparison: Comparison) -> list[dict[str, str]]:

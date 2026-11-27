@@ -381,14 +381,13 @@ class ProductionService:
         )
         try:
             project = self.shorts.open_project(candidate.video_id, candidate.key)
-            if project.config.captions.preset != options.caption_preset and (
-                project.config.captions == CaptionStyle()
+            config = project.config
+            if config.captions.preset != options.caption_preset and (
+                config.captions == CaptionStyle()
             ):
-                config = replace(
-                    project.config, captions=CaptionStyle.from_preset(options.caption_preset)
-                )
+                config = replace(config, captions=CaptionStyle.from_preset(options.caption_preset))
                 self.shorts.save_config(project.id, config)
-            self._frame(project.id, project.config)
+            self._frame(project.id, config)  # saving the crop must keep the chosen captions
             request = self.shorts.request_render(project.id, KIND_EXPORT, queue_job=False)
             render = request.render
             if not request.created and render.active:

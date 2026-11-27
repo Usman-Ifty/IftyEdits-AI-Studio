@@ -631,3 +631,41 @@ upload. Scheduled background refresh would spend quota unasked.
 **Trade-offs.** No traffic sources, no charts over time and no ranking tuning from performance:
 with a handful of videos any tuning would be noise. Reconnecting in Settings drops the optional
 permission. Not verified against real Google.
+
+## D38 — Interface polish, favourites export and traffic sources (2026-11-27)
+
+**Context.** The owner asked for a much better interface that never gets in the way, and for the
+remaining buildable work. D37 left traffic sources out.
+
+**Decision.** Keep Streamlit and its native components. The gallery shows the newest export of each
+Short, with a picture cached under `data/derived/shorts/thumbs/` and read only from the exports
+folder. Batch export is **Export favourites**, which reuses the single-export path with each clip's
+saved settings. Traffic sources come from `reports.query` with the `insightTrafficSourceType`
+dimension, filtered to one video, stored with the snapshot (migration `0012`). Hide Streamlit's
+Deploy button with `client.toolbarMode = "minimal"`.
+
+**Alternatives.** A separate web frontend would rebuild working pages. A channel-wide traffic report
+would not say which video the views belong to.
+
+**Trade-offs.** One request per video, so a refresh covers the 25 most recently followed videos.
+A failed traffic request leaves a note and keeps the other numbers. The `video==ID` filter follows
+the documented examples but is not verified against real Google. The first gallery visit makes the
+missing pictures, so it is slower once.
+
+## D39 — Hindi captions through Raqm and FriBiDi (2026-11-28)
+
+**Context.** Pillow drew Hindi with Arial, which showed empty boxes. Devanagari also needs complex
+text shaping. Pillow's wheels include Raqm but load FriBiDi from the system at run time.
+
+**Decision.** Install FriBiDi with Homebrew (owner approved; one formula, no dependencies, LGPL and
+GPL tools; nothing is bundled or redistributed). Use macOS's Kohinoor Devanagari font. Python does
+not search `/opt/homebrew/lib`, so on macOS the command line restarts itself once with
+`DYLD_FALLBACK_LIBRARY_PATH` extended; the worker and dashboard inherit it. Refuse captioned
+Devanagari renders when shaping is missing.
+
+**Alternatives.** `uharfbuzz` with a FreeType drawing path would add dependencies and a second text
+renderer. Drawing without shaping gives wrong letter order.
+
+**Trade-offs.** `streamlit run` started by hand does not get the library path, so Hindi previews
+there show the refusal; use `iftyedits ui`. Plain `uv run pytest` skips the three Hindi drawing
+tests. Other Indic scripts remain unsupported.

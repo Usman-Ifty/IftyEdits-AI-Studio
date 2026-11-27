@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from iftyedits.core.analytics import ReportRow, VideoDetails
@@ -35,6 +37,15 @@ class TrackedVideo:
     avg_view_percent: float | None
     shares: int | None
     subscribers_gained: int | None
+    traffic: tuple[tuple[str, int], ...] = ()
+    """``(source, views)`` of the latest snapshot, most views first."""
+
+
+def _traffic(text: str | None) -> tuple[tuple[str, int], ...]:
+    try:
+        return tuple((str(source), int(views)) for source, views in json.loads(text or "[]"))
+    except (ValueError, TypeError):
+        return ()
 
 
 class AnalyticsRepository:
@@ -94,14 +105,15 @@ class AnalyticsRepository:
         details: VideoDetails,
         report: ReportRow | None,
         window: tuple[str, str] | None,
+        traffic: Sequence[tuple[str, int]] = (),
     ) -> None:
         """Store what Google reported now."""
         with self.conn:
             self.conn.execute(
                 "INSERT INTO analytics_snapshots (youtube_video_id, fetched_at, title, privacy, "
                 "published_at, views, likes, comments, window_start, window_end, watch_minutes, "
-                "avg_view_seconds, avg_view_percent, shares, subscribers_gained) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "avg_view_seconds, avg_view_percent, shares, subscribers_gained, traffic_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     details.video_id,
                     utc_now(),
@@ -111,13 +123,14 @@ class AnalyticsRepository:
                     details.views,
                     details.likes,
                     details.comments,
-                    window[0] if window and report else None,
-                    window[1] if window and report else None,
+                    window[0] if window and (report or traffic) else None,
+                    window[1] if window and (report or traffic) else None,
                     report.watch_minutes if report else None,
                     report.avg_view_seconds if report else None,
                     report.avg_view_percent if report else None,
                     report.shares if report else None,
                     report.subscribers_gained if report else None,
+                    json.dumps(list(traffic)) if traffic else "",
                 ),
             )
 
@@ -142,7 +155,8 @@ class AnalyticsRepository:
                      ORDER BY r.id DESC LIMIT 1) AS duration_s,
                    s.fetched_at, s.title, s.privacy, s.published_at, s.views, s.likes,
                    s.comments, s.window_start, s.window_end, s.watch_minutes,
-                   s.avg_view_seconds, s.avg_view_percent, s.shares, s.subscribers_gained
+                   s.avg_view_seconds, s.avg_view_percent, s.shares, s.subscribers_gained,
+                   s.traffic_json
               FROM tracked_videos t
               LEFT JOIN short_projects p ON p.id = t.project_id
               LEFT JOIN analytics_snapshots s ON s.id = (
@@ -175,6 +189,7 @@ class AnalyticsRepository:
                 avg_view_percent=r["avg_view_percent"],
                 shares=r["shares"],
                 subscribers_gained=r["subscribers_gained"],
+                traffic=_traffic(r["traffic_json"]),
             )
             for r in rows
         ]

@@ -21,6 +21,7 @@ with an explainable algorithmic score on the **Clips** page. Nothing is rendered
 - macOS on Apple Silicon (Linux works for development and CI)
 - [uv](https://docs.astral.sh/uv/) (manages Python 3.12; system Python is not used)
 - FFmpeg and ffprobe on `PATH` (Homebrew)
+- FriBiDi (`brew install fribidi`), only for Hindi captions
 - Disk space for speech models (74 MB to 2.9 GB each, downloaded only on request)
 
 ## Setup
@@ -239,8 +240,9 @@ Variables: `IFTYEDITS_YOUTUBE_CLIENT_SECRETS`, `IFTYEDITS_YOUTUBE_TOKEN_PATH`,
 
 Optional and read only. The **Analytics** page (or `iftyedits analytics`) follows uploaded Shorts,
 fetches views, likes and comments when you ask, adds watch time and retention if you grant the
-extra Analytics permission, and compares editing choices with their sample sizes. It never changes
-anything on YouTube or in ranking. Tested against a local stub only. Setup:
+extra Analytics permission (including where viewers came from), and compares editing choices
+with their sample sizes. It never changes anything on YouTube or in ranking. Tested against a
+local stub only. Setup:
 [docs/YOUTUBE.md](docs/YOUTUBE.md). Variable for local testing: `IFTYEDITS_YOUTUBE_ANALYTICS_BASE`.
 
 ## Upload preparation (Phase 6)

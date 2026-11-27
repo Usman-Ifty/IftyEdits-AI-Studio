@@ -14,12 +14,12 @@ Update after every completed milestone.
 | 3A Vertical reframing | COMPLETE locally (branch `feat/phase-2-clip-intelligence`) |
 | 3B Captions | COMPLETE locally |
 | 3C Editor and preview | COMPLETE locally |
-| 5 Export and batch | PARTIAL: single Short export done in Phase 3; batch and metadata remain |
-| 4 SEO metadata | NOT STARTED |
-| 6 Safety review | NOT STARTED |
-| 7 YouTube integration | NOT STARTED |
+| 4 SEO metadata | IN PROGRESS (built with Phase 6; manual and optional AI drafting; AI not tried against a real model) |
+| 5 Export and batch | IN PROGRESS (single, one-click and favourites batch export built and tested locally; awaiting review and merge) |
+| 6 Safety review | IN PROGRESS (rights, advisory review and checklist built; real AI provider not tried; awaiting review) |
+| 7 YouTube integration | IN PROGRESS (built and tested against a local stub; real sign-in and channel read worked; no real upload) |
 | 8 Analytics | IN PROGRESS (built and tested against a local stub; not verified with real Google) |
-| 9 Release readiness | NOT STARTED |
+| 9 Release readiness | IN PROGRESS (release checklist written; real-media validation open) |
 
 ---
 
@@ -876,3 +876,42 @@ lightly brightened, loudness-normalised and exported (render 9). Nothing was upl
 rights record, checklist, audience and approval remain the owner's to complete. The automatic
 face framing gave a good first position for that clip, but it missed two scene changes that have
 no stored scene cut, so the keyframes were corrected by hand.
+
+## Interface polish, batch export and traffic sources (2026-11-27, branch `feat/ui-polish`)
+
+**Interface (D38).** Dashboard shows running work with progress bars. Videos are named by title
+instead of file name or id. Finished Shorts shows one card per Short with a picture, opens the
+preview over the page and keeps older versions behind a switch. Review candidates opens on a video
+that has a transcript and can start a missing transcription itself. The upload package says which
+tab to open next. Streamlit's Deploy button is hidden.
+
+**Batch export.** **Export favourites** queues one export per favourite clip; one failure does not
+stop the others.
+
+**Traffic sources.** With detailed analytics allowed, a refresh also stores where views came from
+(migration `0012_traffic_sources`).
+
+Verified on this Mac: full suite with FFmpeg 1395 passed, 1 skipped; Ruff, format and mypy clean.
+Browser check on scratch data with seeded analytics: the main screens worked, and at 375 px no
+page scrolled sideways or showed an error box. Not verified: real Google analytics or traffic
+sources, a real upload, a real AI model. Not built: ranking tuning from performance data and
+speaker detection.
+
+Applied to the owner's checkout on 2026-11-28 with the queue idle; database backed up to
+`data/db/backups/` and migrated to version 12.
+
+## Hindi captions and caption style (2026-11-28)
+
+**Fault.** Hindi captions rendered as empty boxes on the three Shorts exported from a Hindi video.
+
+**Fix (D39).** Devanagari text uses a Devanagari system font and Raqm shaping. FriBiDi 1.0.18 was
+installed with Homebrew (owner approved); `iftyedits` restarts itself once so Python can load it.
+Without it, captioned Hindi renders are refused with instructions.
+
+**Second fault found.** One-click production lost the chosen caption style whenever automatic
+framing saved the crop. Fixed with a regression test.
+
+The three Shorts were exported again in the chosen Boxed style; one frame of each shows correct
+Hindi letters. Earlier exports were kept. Full suite with FFmpeg and shaping: 1405 passed, 1
+skipped. Not verified: the caption wording (speech recognition with `small` makes mistakes, so
+proofread before upload), other Indic scripts (still not supported) and right-to-left word order.

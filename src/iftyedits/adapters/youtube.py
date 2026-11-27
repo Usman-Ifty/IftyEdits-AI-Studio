@@ -435,6 +435,20 @@ class YouTubeClient:
         )
         return self._get_json(f"{self._analytics}/reports?{query}")
 
+    def traffic_report(self, video_id: str, start_date: str, end_date: str) -> dict[str, Any]:
+        """Views by traffic source for one video of the signed-in channel. Read only."""
+        query = urllib.parse.urlencode(
+            {
+                "ids": "channel==MINE",
+                "startDate": start_date,
+                "endDate": end_date,
+                "metrics": "views",
+                "dimensions": "insightTrafficSourceType",
+                "filters": f"video=={video_id}",
+            }
+        )
+        return self._get_json(f"{self._analytics}/reports?{query}")
+
     def channel(self) -> tuple[str, str]:
         """``(channel id, title)`` of the signed-in account's channel."""
         req = urllib.request.Request(  # noqa: S310

@@ -19,6 +19,7 @@ from iftyedits.core.analytics import (
     ANALYTICS_SCOPE,
     MAX_LIST_IDS,
     MAX_REPORT_VIDEOS,
+    MAX_TRAFFIC_VIDEOS,
     REPORT_METRICS,
     Comparison,
     ReportRow,
@@ -27,6 +28,7 @@ from iftyedits.core.analytics import (
     compare,
     length_bucket,
     parse_report,
+    parse_traffic,
     parse_videos,
 )
 from iftyedits.core.errors import AnalyticsError, IftyEditsError, InvalidSourceError
@@ -204,8 +206,22 @@ class AnalyticsService:
                     "YouTube has no detailed numbers for this window yet (they arrive a few "
                     "days late)."
                 )
+        traffic: dict[str, tuple[tuple[str, int], ...]] = {}
+        if status.detailed and mine:
+            try:
+                for details in mine[-MAX_TRAFFIC_VIDEOS:]:  # the most recently followed
+                    traffic[details.video_id] = parse_traffic(
+                        client.traffic_report(details.video_id, *window)
+                    )
+            except IftyEditsError as exc:
+                note = note or f"Traffic sources were not available: {exc}"
         for details in mine:
-            self.repo.add_snapshot(details, rows.get(details.video_id), window)
+            self.repo.add_snapshot(
+                details,
+                rows.get(details.video_id),
+                window,
+                traffic.get(details.video_id, ()),
+            )
         return RefreshReport(len(mine), tuple(skipped), len(rows), window, note)
 
 

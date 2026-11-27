@@ -72,7 +72,7 @@ from iftyedits.core.protocols import CancelToken, FaceDetector, MediaProber, Med
 from iftyedits.core.shorts import ShortConfig, compute_crop
 from iftyedits.pipeline.jobs import JobQueue
 from iftyedits.storage.clips import ClipRepository
-from iftyedits.storage.originals import assert_safe_output_path
+from iftyedits.storage.originals import assert_safe_output_path, is_within
 from iftyedits.storage.shorts import (
     KIND_EXPORT,
     KIND_PREVIEW,
@@ -96,6 +96,8 @@ MIN_PATH_WEIGHT = 0.05
 FACE_STEP_S = 1.0
 """Seconds between pictures checked for faces inside one shot."""
 FACE_MAX_SAMPLES = 60
+THUMB_AT_S = 1.5
+"""Where in an export its gallery picture is taken (past any fade-in)."""
 SHOT_MARGIN_S = 0.1
 """A shot is first sampled this long after its cut, past any blended frame."""
 MIN_FACE_COVERAGE = 0.25
@@ -121,6 +123,17 @@ class RenderRequest:
     created: bool
     """False when an identical active or finished render was reused."""
     reason: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class BatchRequest:
+    """Outcome of asking for several exports at once."""
+
+    queued: int
+    reused: int
+    """Exports already finished or running with the same settings."""
+    failed: tuple[tuple[str, str], ...]
+    """``(clip key, reason)``; one failure never stops the others."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -396,6 +409,40 @@ class ShortService:
             partial.replace(target)
         return target
 
+    def export_thumbnail(self, render: ShortRender, *, width: int = 360) -> Path | None:
+        """A small cached picture of a finished export, or ``None`` when it cannot be made.
+
+        Only files inside the exports folder are read. The picture is kept under the derived
+        folder, so it is made once per render.
+        """
+        if render.status != "succeeded" or not render.output_path:
+            return None
+        source = Path(render.output_path)
+        if not source.is_file() or not is_within(source, self.settings.exports_dir):
+            return None
+        folder = self._safe(self.settings.derived_dir / SHORTS_DIR / "thumbs")
+        target = folder / f"r{render.id}_{width}.jpg"
+        if target.is_file():
+            return target
+        frame = folder / f".r{render.id}_{width}.partial.png"
+        small = folder / f".r{render.id}_{width}.partial.jpg"
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            at = min(THUMB_AT_S, (render.duration_s or 0.0) / 2)
+            extract_frame(self.transcoder(), source, at, self._safe(frame))
+            with Image.open(frame) as image:
+                picture = image.convert("RGB")
+                picture.thumbnail((width, width * 4))
+                picture.save(self._safe(small), "JPEG", quality=85)
+            small.replace(target)
+        except (IftyEditsError, OSError) as exc:
+            logger.info("No thumbnail for render %s: %s", render.id, exc)
+            return None
+        finally:
+            frame.unlink(missing_ok=True)
+            small.unlink(missing_ok=True)
+        return target
+
     def suggest_crop(self, project_id: int, samples: int = 5) -> CropSuggestion:
         """Where the vertical window should sit over this clip (never raises for bad frames).
 
@@ -605,6 +652,23 @@ class ShortService:
         self.shorts.attach_job(render.id, job_id)
         refreshed = self.shorts.get_render(render.id) or render
         return RenderRequest(refreshed, True)
+
+    def export_candidates(self, video_id: int, candidate_keys: Sequence[str]) -> BatchRequest:
+        """Queue an export of each suggestion, using its saved Short settings if any."""
+        queued = reused = 0
+        failed: list[tuple[str, str]] = []
+        for key in candidate_keys:
+            try:
+                project = self.open_project(video_id, key)
+                request = self.request_render(project.id, KIND_EXPORT)
+            except IftyEditsError as exc:
+                failed.append((key, str(exc)))
+                continue
+            if request.created:
+                queued += 1
+            else:
+                reused += 1
+        return BatchRequest(queued, reused, tuple(failed))
 
     # ------------------------------------------------------------------ worker
 

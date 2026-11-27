@@ -65,6 +65,22 @@ st.dataframe(
     ],
     hide_index=True,
     width="stretch",
+    column_order=(
+        "File",
+        "Duration",
+        "Transcript",
+        "Clips",
+        "Audio",
+        "Proxy",
+        "Thumbnail",
+        "Resolution",
+        "Size",
+        "Status",
+        "Sources",
+        "Imported (UTC)",
+        "SHA-256",
+        "ID",
+    ),
 )
 
 labels = {f"#{v.id}  {v.original_filename}": v for v in videos}
@@ -146,7 +162,7 @@ def media_panel(video: Video) -> None:
             disabled=active is not None,
             help="Extract 16 kHz audio, make a 720p proxy and a thumbnail. "
             "Valid existing outputs are reused.",
-            type="primary",
+            type="primary" if remaining else "secondary",
         )
         rebuild = b2.button(
             "Regenerate all",
@@ -158,6 +174,7 @@ def media_panel(video: Video) -> None:
             "Produce Shorts",
             key=f"produce-{video.id}",
             disabled=active is not None,
+            type="secondary" if remaining else "primary",
             help="Prepare, transcribe, analyze and export the best clips as separate "
             "1080x1920 MP4 files, in one job. Finished steps are reused.",
         )

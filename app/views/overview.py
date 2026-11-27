@@ -19,7 +19,14 @@ from iftyedits.storage.processing import ProcessingRepository
 from iftyedits.storage.transcripts import TranscriptRepository
 from iftyedits.storage.videos import VideoRepository
 from iftyedits.ui import theme
-from iftyedits.ui.formatting import human_duration, human_size, job_target, utc_short
+from iftyedits.ui.formatting import (
+    JOB_KIND_LABELS,
+    human_duration,
+    human_size,
+    job_target,
+    utc_short,
+    video_title,
+)
 
 settings = Settings.from_env()
 prefs = Preferences(settings.data_dir)
@@ -48,6 +55,7 @@ with closing(open_database(settings.db_path)) as conn:
     analysed = len(ClipRepository(conn).current_by_video())
     recent_jobs = queue.list_recent(limit=50)
 
+names = {v.id: v.original_filename for v in videos}
 done = (StageStatus.SUCCEEDED, StageStatus.SKIPPED)
 prepared = sum(1 for v in videos if all(summary.get(v.id, {}).get(s) in done for s in ALL_STAGES))
 failed = sum(1 for v in videos if StageStatus.FAILED in summary.get(v.id, {}).values())
@@ -74,7 +82,7 @@ with go_create, st.container(border=True):
     st.caption("Paste a link or add a video file.")
     link("views/import_videos.py", "Create Shorts", ":material/add_circle:")
 with go_watch, st.container(border=True):
-    st.markdown("#### 2. Watch and download")
+    st.markdown("#### 2. Watch and upload")
     st.caption("Your finished Shorts, ready to check.")
     link("views/exports.py", "Finished Shorts", ":material/movie:")
 
@@ -84,11 +92,30 @@ if not workers:
         "`uv run iftyedits worker`, or `uv run iftyedits ui --start-worker` while this "
         "dashboard stays open."
     )
-elif active:
-    st.info(f"Working on {active} job(s) now.")
-    link("views/jobs.py", "See progress", ":material/pending_actions:")
-else:
+elif not active:
     st.markdown(theme.pill("Ready", "good"), unsafe_allow_html=True)
+
+
+@st.fragment(run_every=2)
+def live_activity(seen: int) -> None:
+    """What the worker is doing now, refreshed every two seconds."""
+    with closing(open_database(settings.db_path)) as live_conn:
+        running = JobQueue(live_conn).list_active()
+    if len(running) < seen:
+        st.rerun()  # something finished: redraw the lists below
+    st.subheader("Working now")
+    for job in running[:3]:
+        with st.container(border=True):
+            kind = JOB_KIND_LABELS.get(job.kind, job.kind)
+            kind = kind[:1].upper() + kind[1:]
+            st.markdown(f"**{kind}** · {job_target(job, names)}")
+            st.progress(min(1.0, max(0.0, job.progress)), text=job.message or "Waiting")
+    st.caption(f"Working on {len(running)} job(s) now.")
+    link("views/jobs.py", "See progress", ":material/pending_actions:")
+
+
+if active:
+    live_activity(active)
 if failed:
     st.error(f"{failed} video(s) have a failed preparation stage. See My Videos.")
 elif videos and prepared < len(videos):
@@ -103,7 +130,7 @@ with left:
         badge = theme.pill("Transcribed", "good") if video.id in transcribed_ids else ""
         st.markdown(
             theme.card(
-                video.original_filename,
+                video_title(video.original_filename),
                 f"#{video.id} · {human_size(video.size_bytes)} · "
                 f"{human_duration(video.duration_s)}",
                 badge,
@@ -120,7 +147,7 @@ with right:
         tone = "good" if total and ok == total else "warn"
         st.markdown(
             theme.card(
-                job_target(job),
+                job_target(job, names),
                 utc_short(job.finished_at),
                 theme.pill(f"{ok}/{total} Shorts", tone),
             ),

@@ -34,6 +34,33 @@ MAX_LIST_IDS = 50
 """Video ids sent per ``videos.list`` call."""
 MIN_GROUP = 5
 """Fewer videos than this in a group and it is not compared."""
+TRAFFIC_DIMENSION = "insightTrafficSourceType"
+MAX_TRAFFIC_VIDEOS = 25
+"""The traffic source report is asked once per video, so one refresh covers this many."""
+TRAFFIC_LABELS = {
+    "ADVERTISING": "Advertising",
+    "ANNOTATION": "Annotations",
+    "CAMPAIGN_CARD": "Campaign cards",
+    "END_SCREEN": "End screens",
+    "EXT_URL": "Other websites and apps",
+    "HASHTAGS": "Hashtag pages",
+    "LIVE_REDIRECT": "Live redirect",
+    "NO_LINK_EMBEDDED": "Embedded player",
+    "NO_LINK_OTHER": "Direct or unknown",
+    "NOTIFICATION": "Notifications",
+    "PLAYLIST": "Playlists",
+    "PRODUCT_PAGE": "Product pages",
+    "PROMOTED": "Promoted",
+    "RELATED_VIDEO": "Suggested videos",
+    "SHORTS": "Shorts feed",
+    "SOUND_PAGE": "Sound pages",
+    "SUBSCRIBER": "Home and subscriptions",
+    "YT_CHANNEL": "Channel pages",
+    "YT_OTHER_PAGE": "Other YouTube pages",
+    "YT_SEARCH": "YouTube search",
+    "VIDEO_REMIXES": "Video remixes",
+    "WATCH_WITH": "Watch With",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,6 +199,32 @@ def parse_report(payload: Mapping[str, Any]) -> dict[str, ReportRow]:
             _count(values.get("subscribersGained")),
         )
     return found
+
+
+def parse_traffic(payload: Mapping[str, Any]) -> tuple[tuple[str, int], ...]:
+    """``(source, views)`` rows of a traffic source report, most views first."""
+    headers = payload.get("columnHeaders")
+    rows = payload.get("rows")
+    if not isinstance(headers, list) or not isinstance(rows, list):
+        return ()
+    names = [str(h.get("name", "")) if isinstance(h, dict) else "" for h in headers]
+    if TRAFFIC_DIMENSION not in names or "views" not in names:
+        return ()
+    found: dict[str, int] = {}
+    for row in rows:
+        if not isinstance(row, list) or len(row) != len(names):
+            continue
+        values = dict(zip(names, row, strict=True))
+        source = values[TRAFFIC_DIMENSION]
+        views = _count(values["views"])
+        if isinstance(source, str) and source and views is not None:
+            found[source] = views
+    return tuple(sorted(found.items(), key=lambda item: (-item[1], item[0])))
+
+
+def traffic_label(source: str) -> str:
+    """A plain name for a traffic source code; unknown codes are shown as sent."""
+    return TRAFFIC_LABELS.get(source, source.replace("_", " ").capitalize())
 
 
 def length_bucket(seconds: float | None) -> str:

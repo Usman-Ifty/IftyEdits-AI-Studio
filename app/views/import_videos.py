@@ -17,6 +17,7 @@ from iftyedits.pipeline.jobs import JobQueue
 from iftyedits.services.ingest import discover, validate_source
 from iftyedits.services.production import ProductionOptions
 from iftyedits.storage.db import open_database
+from iftyedits.storage.videos import VideoRepository
 from iftyedits.ui import theme
 from iftyedits.ui.formatting import human_size, job_row
 from iftyedits.ui.shorts import CAPTION_PRESET_LABELS
@@ -164,6 +165,9 @@ def job_status() -> None:
         queue = JobQueue(conn)
         jobs = queue.list_recent(limit=5)
         workers = queue.live_workers()
+        names = {
+            v.id: v.original_filename for v in VideoRepository(conn).list_recent(limit=100_000)
+        }
     st.subheader("Recent jobs")
     if not workers and any(j.status.value == "queued" for j in jobs):
         st.warning("Jobs are waiting but no worker is running. Start `uv run iftyedits worker`.")
@@ -172,10 +176,10 @@ def job_status() -> None:
         return
     st.caption("Cancel jobs and see processing errors on the Processing Queue page.")
     st.dataframe(
-        [job_row(j) for j in jobs],
+        [job_row(j, names) for j in jobs],
         hide_index=True,
         width="stretch",
-        column_order=("ID", "Kind", "File", "Status", "Progress", "Detail"),
+        column_order=("Kind", "File", "Status", "Progress", "Detail"),
         column_config={
             "Progress": st.column_config.ProgressColumn(
                 min_value=0.0, max_value=1.0, format="percent"
