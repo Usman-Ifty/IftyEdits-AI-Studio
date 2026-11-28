@@ -14,12 +14,12 @@ Update after every completed milestone.
 | 3A Vertical reframing | COMPLETE locally (branch `feat/phase-2-clip-intelligence`) |
 | 3B Captions | COMPLETE locally |
 | 3C Editor and preview | COMPLETE locally |
-| 5 Export and batch | PARTIAL: single Short export done in Phase 3; batch and metadata remain |
-| 4 SEO metadata | NOT STARTED |
-| 6 Safety review | NOT STARTED |
-| 7 YouTube integration | NOT STARTED |
-| 8 Analytics | NOT STARTED |
-| 9 Release readiness | NOT STARTED |
+| 4 SEO metadata | IN PROGRESS (built with Phase 6; manual and optional AI drafting; AI not tried against a real model) |
+| 5 Export and batch | IN PROGRESS (single, one-click and favourites batch export built and tested locally; awaiting review and merge) |
+| 6 Safety review | IN PROGRESS (rights, advisory review and checklist built; real AI provider not tried; awaiting review) |
+| 7 YouTube integration | IN PROGRESS (built and tested against a local stub; real sign-in and channel read worked; no real upload) |
+| 8 Analytics | IN PROGRESS (built and tested against a local stub; not verified with real Google) |
+| 9 Release readiness | IN PROGRESS (release checklist written; real-media validation open) |
 
 ---
 
@@ -835,3 +835,110 @@ ran on self-made speech with the source unchanged; missing FFmpeg, missing model
 corrupt media were refused with clear messages; OSV reported no known vulnerabilities for the 68
 locked packages. Real Google: sign-in, channel read and token refresh worked; no upload yet.
 Added `docs/RELEASE_CHECKLIST.md` and corrected worker hints in the UI. Open items are listed there.
+
+## Face-aware cropping (2026-11-27, branch `feat/face-framing`)
+
+The crop now follows faces when the YuNet model is installed (`iftyedits models download yunet`),
+jumps at scene cuts and falls back to picture detail when a clip shows few faces (D36). The model
+(227 KB, MIT) was downloaded with the owner's approval and matched its pinned SHA-256.
+
+Verified on this Mac: full suite with FFmpeg 1328 passed, 1 skipped; Ruff, format and mypy clean;
+**Auto-frame** ran in the browser on scratch data. Real-media check on one 15-minute gameplay
+commentary video (scratch copy, `small` model): five Shorts exported in about 14 minutes while
+the machine was heavily loaded by other work. Face framing applied to two of the five and kept
+people in frame noticeably better on sampled frames; the other three showed too few faces and kept
+detail framing. Existing Shorts keep their crop until **Auto-frame** is pressed.
+
+Not verified: podcast, webcam, sports, slides, noisy and non-English footage; speaker switching in
+a two-person shot. Not built: speaker detection, split-screen layouts, analytics (Phase 8, left
+out of this round by the owner). The macOS CI failure on the Phase 7 pull request (two editor
+page tests needed `ffprobe`) was fixed on that branch on 2026-11-27.
+
+## Simpler interface and analytics (2026-11-27, branch `feat/face-framing`)
+
+**Interface.** Everyday pages come first in the sidebar, housekeeping sits under **More**, and
+details (workflow tracker, paths, filters, technical stream data) are folded into expanders.
+
+**Analytics (Phase 8, D37).** New Analytics page and `iftyedits analytics` command; migration
+`0011_analytics`; optional second Google permission for watch time and retention. Tests use a local
+stub of Google's endpoints. Real Google analytics has not been tried: it needs the YouTube
+Analytics API enabled and the owner's consent. Traffic sources and ranking tuning are not built.
+
+Browser check on a scratch copy with the local Google stub (2026-11-27): all nine pages loaded
+with no error boxes; at 375 px the Dashboard, Clip Editor, Finished Shorts and Analytics pages
+did not scroll sideways; connect, follow a video, refresh, allow detailed analytics and refresh
+again worked. The only console errors seen were 404s for Streamlit's `/<page>/_stcore/*` probes
+on deep links, after which the root addresses answered. Two layout faults were fixed: the
+details label overflowing Finished Shorts cards and a full-width video preview in the editor.
+
+Real library: one GTA 6 Short (project 3) was re-framed with hand-set keyframes per scene,
+lightly brightened, loudness-normalised and exported (render 9). Nothing was uploaded; the
+rights record, checklist, audience and approval remain the owner's to complete. The automatic
+face framing gave a good first position for that clip, but it missed two scene changes that have
+no stored scene cut, so the keyframes were corrected by hand.
+
+## Interface polish, batch export and traffic sources (2026-11-27, branch `feat/ui-polish`)
+
+**Interface (D38).** Dashboard shows running work with progress bars. Videos are named by title
+instead of file name or id. Finished Shorts shows one card per Short with a picture, opens the
+preview over the page and keeps older versions behind a switch. Review candidates opens on a video
+that has a transcript and can start a missing transcription itself. The upload package says which
+tab to open next. Streamlit's Deploy button is hidden.
+
+**Batch export.** **Export favourites** queues one export per favourite clip; one failure does not
+stop the others.
+
+**Traffic sources.** With detailed analytics allowed, a refresh also stores where views came from
+(migration `0012_traffic_sources`).
+
+Verified on this Mac: full suite with FFmpeg 1395 passed, 1 skipped; Ruff, format and mypy clean.
+Browser check on scratch data with seeded analytics: the main screens worked, and at 375 px no
+page scrolled sideways or showed an error box. Not verified: real Google analytics or traffic
+sources, a real upload, a real AI model. Not built: ranking tuning from performance data and
+speaker detection.
+
+Applied to the owner's checkout on 2026-11-28 with the queue idle; database backed up to
+`data/db/backups/` and migrated to version 12.
+
+## Hindi captions and caption style (2026-11-28)
+
+**Fault.** Hindi captions rendered as empty boxes on the three Shorts exported from a Hindi video.
+
+**Fix (D39).** Devanagari text uses a Devanagari system font and Raqm shaping. FriBiDi 1.0.18 was
+installed with Homebrew (owner approved); `iftyedits` restarts itself once so Python can load it.
+Without it, captioned Hindi renders are refused with instructions.
+
+**Second fault found.** One-click production lost the chosen caption style whenever automatic
+framing saved the crop. Fixed with a regression test.
+
+The three Shorts were exported again in the chosen Boxed style; one frame of each shows correct
+Hindi letters. Earlier exports were kept. Full suite with FFmpeg and shaping: 1405 passed, 1
+skipped. Not verified: the caption wording (speech recognition with `small` makes mistakes, so
+proofread before upload), other Indic scripts (still not supported) and right-to-left word order.
+
+## Roman captions for Hindi and Urdu (2026-11-28)
+
+The owner asked for English letters only. Hindi and Urdu speech is now shown in Roman letters
+(D40). The three Shorts were exported again; their caption text has no Hindi or Urdu characters,
+and one frame of each was checked. Full suite with FFmpeg and shaping: 1422 passed, 1 skipped.
+Not done: better recognition. The `small` model mishears many words in this video; a larger or
+Hinglish model needs the owner's approval to download. Urdu detection was tested with a fake
+engine only.
+
+### `large-v3-turbo` trial (2026-11-28)
+
+Downloaded with the owner's approval and verified. The full 29.5-minute video transcribed in about
+20 minutes. Compared on the three Short ranges: some sentences read better, but it found about half
+the words in two clips, kept one caption on screen for 17 seconds and invented a few foreign
+characters. Other settings on those ranges did not give a clearly better result. The `small`
+transcript was made current again and the Shorts exported from it; the turbo transcript is kept
+(Transcripts, **Version**). Added: removal of broken and non-Latin characters from Hindi
+transcripts. Full suite before the last line-wrap change: 1424 passed, 1 skipped.
+
+## Caption freeze fix and clean install (2026-11-28)
+
+A word reported as very long can no longer keep a caption on screen past 6.5 seconds. Full suite
+with FFmpeg and shaping: 1425 passed, 1 skipped. A fresh clone of commit `4bce302` installed with
+`uv sync --locked` and passed `iftyedits check` (schema 12). Still open: owner-approved real upload,
+real Google analytics, a real AI provider run, real-media review, better Hindi recognition, merge of
+the pull requests.

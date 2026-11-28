@@ -21,6 +21,7 @@ with an explainable algorithmic score on the **Clips** page. Nothing is rendered
 - macOS on Apple Silicon (Linux works for development and CI)
 - [uv](https://docs.astral.sh/uv/) (manages Python 3.12; system Python is not used)
 - FFmpeg and ffprobe on `PATH` (Homebrew)
+- FriBiDi (`brew install fribidi`), only for Hindi letters typed into captions
 - Disk space for speech models (74 MB to 2.9 GB each, downloaded only on request)
 
 ## Setup
@@ -30,6 +31,7 @@ uv sync
 cp .env.example .env
 uv run iftyedits check
 uv run iftyedits models download small   # optional now; also available in the UI
+uv run iftyedits models download yunet   # 227 KB face model for face-aware cropping
 ```
 
 ## Running
@@ -62,6 +64,7 @@ uv run streamlit run app/Home.py
 | `iftyedits enqueue PATH... [-r] [--process]` | Queue files or folders for the worker; `--process` also prepares media |
 | `iftyedits worker [--once]` | Run queued jobs (imports, preparation, transcription, downloads, production) |
 | `iftyedits fetch URL [--process]` | Queue a download of a YouTube link (only for videos you may use) |
+| `iftyedits analytics [list\|add LINK\|refresh]` | Follow uploaded Shorts and fetch their numbers (read only) |
 | `iftyedits produce SOURCE [--clips N] [--min-score S] [--captions P] [--force]` | Queue the whole link-to-Shorts pipeline for a link, video id or SHA-256 prefix |
 | `iftyedits process VIDEO... \| --all [--stage S] [--force]` | Queue media preparation (audio, proxy, thumbnail) |
 | `iftyedits models [list\|download NAME\|verify NAME]` | List, download or verify speech models |
@@ -88,22 +91,22 @@ hidden file, other extension, subfolder without `-r`) is listed with its reason.
 **Clips → Edit as a Short** opens an editor to trim a suggestion, frame it for 9:16, edit
 captions, adjust look and sound, render a preview and export an H.264/AAC MP4 (1080x1920,
 VideoToolbox when available, libx264 otherwise) to `data/exports/shorts/`. Captions are drawn
-with Pillow because the installed FFmpeg has no text filters. Planned, not built: face-aware
-transitions, multi-clip timelines, emphasis words. See D24 and D25 in
+with Pillow because the installed FFmpeg has no text filters. Planned, not built:
+transitions, multi-clip timelines, speaker tracking, split-screen layouts. See D24, D25 and D36 in
 [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## One-click production (Phase 4)
 
 Paste a YouTube link on **Import** (tick that you may use the video) and press **Produce
 Shorts**, or run `iftyedits produce <link>`. One job downloads the video, prepares media,
-transcribes, finds the best moments, picks a steady crop and exports each chosen clip as its
+transcribes, finds the best moments, frames them and exports each chosen clip as its
 own 1080x1920 MP4 in `data/exports/shorts/<title>-v<id>/`. Each file is checked with ffprobe.
 Re-running reuses finished stages and never overwrites an export. Needs a running worker
 (`iftyedits ui` starts one). **Finished Shorts** lists the files; **Guides & Help** walks through it.
 `--review` lists the picks without rendering; `--min-length` and `--max-length` bound clip
-length. Weak clips are never added to reach the count. When the picture is wide the crop can
-follow the busiest part of the scene smoothly (it does not recognise faces); a crop you set by
-hand always wins. Caption presets: Classic, Boxed, Highlight, Minimal, Impact, Studio, Clean,
+length. Weak clips are never added to reach the count. When the picture is wide the crop
+follows faces if the face model is installed (it never identifies anyone), otherwise the busiest
+part of the scene; a crop you set by hand always wins. Caption presets: Classic, Boxed, Highlight, Minimal, Impact, Studio, Clean,
 Punchy, Cinematic, Mobile; optional colouring of key words.
 Downloading does not grant rights: you are responsible for being allowed to use each video.
 
@@ -185,6 +188,7 @@ Relative paths resolve against `IFTYEDITS_HOME`, or the current directory if uns
 | `IFTYEDITS_HOME` | current directory | Project root for `.env` and relative paths |
 | `IFTYEDITS_DATA_DIR` | `./data` | Root of local data |
 | `IFTYEDITS_MODELS_DIR` | `./models` | Model weights cache |
+| `IFTYEDITS_FACE_FRAMING` | `true` | Follow faces with the crop when the face model is installed |
 | `IFTYEDITS_LOG_LEVEL` | `INFO` | Log level |
 | `IFTYEDITS_FFPROBE_PATH` | `ffprobe` | ffprobe executable |
 | `IFTYEDITS_PROBE_TIMEOUT_S` | `60` | ffprobe timeout per file |
@@ -231,6 +235,15 @@ Unlisted** after typing an explicit approval of the exact details. The studio ne
 schedules. Manual export remains available. Setup, limits and security: [docs/YOUTUBE.md](docs/YOUTUBE.md).
 Variables: `IFTYEDITS_YOUTUBE_CLIENT_SECRETS`, `IFTYEDITS_YOUTUBE_TOKEN_PATH`,
 `IFTYEDITS_YOUTUBE_CHUNK_MB`, `IFTYEDITS_YOUTUBE_DAILY_UPLOAD_LIMIT`.
+
+## Analytics (Phase 8)
+
+Optional and read only. The **Analytics** page (or `iftyedits analytics`) follows uploaded Shorts,
+fetches views, likes and comments when you ask, adds watch time and retention if you grant the
+extra Analytics permission (including where viewers came from), and compares editing choices
+with their sample sizes. It never changes anything on YouTube or in ranking. Tested against a
+local stub only. Setup:
+[docs/YOUTUBE.md](docs/YOUTUBE.md). Variable for local testing: `IFTYEDITS_YOUTUBE_ANALYTICS_BASE`.
 
 ## Upload preparation (Phase 6)
 

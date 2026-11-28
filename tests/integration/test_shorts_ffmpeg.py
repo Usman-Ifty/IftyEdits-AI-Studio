@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 import subprocess
 from collections.abc import Callable, Iterator
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,7 @@ from iftyedits.core.errors import (
     JobCancelledError,
     ShortConfigError,
 )
+from iftyedits.core.framing import FaceBox
 from iftyedits.core.models import JobStatus, Video
 from iftyedits.core.shorts import AudioSettings, PolishSettings, ShortConfig
 from iftyedits.pipeline.jobs import RENDER_SHORT, JobQueue
@@ -363,6 +365,28 @@ def test_suggest_path_returns_a_bounded_path_or_falls_back(make_short: Setup) ->
     assert all(0.0 <= p <= 1.0 for _, p in path.keyframes)
     portrait, pid = make_short("portrait.mp4")
     assert portrait.suggest_path(pid).method == "none"
+
+
+class _RightSideFace:
+    """Stands in for the model: one face on the right of every picture."""
+
+    def detect(self, image: Path) -> list[FaceBox]:
+        return [FaceBox(0.75, 0.2, 0.1, 0.25, 0.9)]
+
+
+def test_suggest_path_frames_a_detected_face_and_exports(make_short: Setup, ffmpeg: str) -> None:
+    service, project = make_short("land.mp4")
+    service.faces = _RightSideFace()
+    path = service.suggest_path(project)
+    assert path.method == "steady"
+    assert "faces" in path.note
+    assert path.keyframes[0][1] > 0.8
+    config = service.project(project).config
+    service.save_config(project, replace(config, crop_position=path.keyframes[0][1]))
+    out = _run(service, project=project)
+    props = _probe(out)
+    assert (props["w"], props["h"]) == (1080, 1920)
+    _decode(ffmpeg, out)
 
 
 def test_low_disk_space_fails_cleanly_before_encoding(

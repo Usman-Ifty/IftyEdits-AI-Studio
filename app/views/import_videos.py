@@ -15,9 +15,9 @@ from iftyedits.core.errors import IftyEditsError
 from iftyedits.core.sources import PERMISSION_NOTICE, parse_video_url
 from iftyedits.pipeline.jobs import JobQueue
 from iftyedits.services.ingest import discover, validate_source
-from iftyedits.services.journey import latest_progress
 from iftyedits.services.production import ProductionOptions
 from iftyedits.storage.db import open_database
+from iftyedits.storage.videos import VideoRepository
 from iftyedits.ui import theme
 from iftyedits.ui.formatting import human_size, job_row
 from iftyedits.ui.shorts import CAPTION_PRESET_LABELS
@@ -32,17 +32,10 @@ st.markdown(
     ),
     unsafe_allow_html=True,
 )
-with closing(open_database(settings.db_path)) as _conn:
-    _flags, _name = latest_progress(_conn)
-st.markdown(
-    "**Your workflow**" + (f" · latest video: {_name}" if _name else ""),
-)
-st.markdown(theme.journey(_flags), unsafe_allow_html=True)
-
 tab_url, tab_file = st.tabs(["YouTube link", "Local file"])
 
 with tab_url:
-    st.info(PERMISSION_NOTICE)
+    st.caption(PERMISSION_NOTICE)
     with st.form("url"):
         raw_url = st.text_input(
             "YouTube video link",
@@ -50,24 +43,25 @@ with tab_url:
             help="A normal watch, youtu.be or Shorts link. Playlists, channels and live "
             "streams are not accepted.",
         )
-        o1, o2, o3 = st.columns(3)
-        clips = o1.number_input(
-            "Most Shorts to make", 1, 20, 5, help="Only the best-scoring suggestions are used."
-        )
-        min_score = o2.slider(
-            "Minimum score", 0, 100, 40, help="Suggestions scoring below this are skipped."
-        )
-        preset = o3.selectbox(
-            "Caption style",
-            list(CAPTION_PRESET_LABELS),
-            index=list(CAPTION_PRESET_LABELS).index("highlight"),
-            format_func=lambda key: CAPTION_PRESET_LABELS[key],
-        )
-        review = st.checkbox(
-            "Review the picks before rendering",
-            help="Selects the best clips and stops. Check them in the Clip Editor, then "
-            "produce again without this box.",
-        )
+        with st.expander("Options (the defaults work well)"):
+            o1, o2, o3 = st.columns(3)
+            clips = o1.number_input(
+                "Most Shorts to make", 1, 20, 5, help="Only the best-scoring suggestions are used."
+            )
+            min_score = o2.slider(
+                "Minimum score", 0, 100, 40, help="Suggestions scoring below this are skipped."
+            )
+            preset = o3.selectbox(
+                "Caption style",
+                list(CAPTION_PRESET_LABELS),
+                index=list(CAPTION_PRESET_LABELS).index("highlight"),
+                format_func=lambda key: CAPTION_PRESET_LABELS[key],
+            )
+            review = st.checkbox(
+                "Review the picks before rendering",
+                help="Selects the best clips and stops. Check them in the Clip Editor, then "
+                "produce again without this box.",
+            )
         allowed = st.checkbox("I have permission to use this video")
         b1, b2 = st.columns(2)
         produce = b1.form_submit_button("Produce Shorts", type="primary")
@@ -169,8 +163,11 @@ def job_status() -> None:
     """Live job table, refreshed every two seconds without rerunning the page."""
     with closing(open_database(settings.db_path)) as conn:
         queue = JobQueue(conn)
-        jobs = queue.list_recent(limit=50)
+        jobs = queue.list_recent(limit=5)
         workers = queue.live_workers()
+        names = {
+            v.id: v.original_filename for v in VideoRepository(conn).list_recent(limit=100_000)
+        }
     st.subheader("Recent jobs")
     if not workers and any(j.status.value == "queued" for j in jobs):
         st.warning("Jobs are waiting but no worker is running. Start `uv run iftyedits worker`.")
@@ -179,9 +176,10 @@ def job_status() -> None:
         return
     st.caption("Cancel jobs and see processing errors on the Processing Queue page.")
     st.dataframe(
-        [job_row(j) for j in jobs],
+        [job_row(j, names) for j in jobs],
         hide_index=True,
         width="stretch",
+        column_order=("Kind", "File", "Status", "Progress", "Detail"),
         column_config={
             "Progress": st.column_config.ProgressColumn(
                 min_value=0.0, max_value=1.0, format="percent"

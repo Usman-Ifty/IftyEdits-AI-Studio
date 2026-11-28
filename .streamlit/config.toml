@@ -3,6 +3,10 @@
 address = "127.0.0.1"
 headless = true
 
+[client]
+# Hide the developer "Deploy" button; this is a local studio.
+toolbarMode = "minimal"
+
 [browser]
 gatherUsageStats = false
 serverAddress = "127.0.0.1"

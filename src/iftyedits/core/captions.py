@@ -25,6 +25,8 @@ from iftyedits.core.signals import STOPWORDS
 Timing = Literal["word", "segment", "estimated"]
 MIN_CUE_S = 0.2
 MAX_CUE_S = 6.0
+MAX_LINGER_S = 0.5
+"""How far past ``MAX_CUE_S`` a caption may stay when a word is reported as very long."""
 PAUSE_SPLIT_S = 0.7
 WORD_TOLERANCE_S = 0.35
 _SENTENCE_END = re.compile(r"[.!?…]['\")\]]*$")
@@ -176,7 +178,7 @@ def build_cues(
             timing = "estimated"
         for piece in pieces:
             cue_start = max(0.0, piece[0][1] - start_s)
-            cue_end = min(duration, piece[-1][2] - start_s)
+            cue_end = min(duration, piece[-1][2] - start_s, cue_start + MAX_CUE_S + MAX_LINGER_S)
             if cue_end - cue_start < MIN_CUE_S:
                 cue_end = min(duration, cue_start + MIN_CUE_S)
             if cue_end <= cue_start:

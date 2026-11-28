@@ -9,6 +9,7 @@ from typing import Any
 import streamlit as st
 from PIL import Image
 
+from iftyedits.adapters.faces import load_face_detector
 from iftyedits.adapters.short_render import crop_guide, framed_still
 from iftyedits.config import Settings
 from iftyedits.core.captions import CaptionCue, clean_text
@@ -282,12 +283,18 @@ with left:
             if not active_path(st.session_state):
                 mode = "Manual or steady (one fixed window)"
             st.caption(f"Framing mode: {mode}")
+            if settings.face_framing and load_face_detector(settings) is None:
+                st.caption(
+                    "Face framing is off because its model is not installed. "
+                    "Run `uv run iftyedits models download yunet` (227 KB)."
+                )
             if st.button(
                 "Auto-frame",
                 key=k("af"),
-                help="Looks at frames across the saved clip range and moves the crop over the "
-                "busiest part of the picture, panning slowly if it shifts. It does not "
-                "recognise faces. Moving the slider afterwards switches back to manual.",
+                help="Looks at frames across the saved clip range. With the face model "
+                "installed the crop follows faces; otherwise it moves over the busiest part "
+                "of the picture. It never identifies anyone. Moving the slider afterwards "
+                "switches back to manual.",
             ):
                 with closing(open_database(settings.db_path)) as conn:
                     try:
@@ -646,7 +653,8 @@ def render_status(project_id: int, current: ShortProject, source: SourceInfo) ->
                 f"{human_size(done.size_bytes or 0)}, "
                 f"{'with audio' if done.has_audio else 'no audio'}, encoder {done.encoder}"
             )
-            st.video(str(done.output_path))
+            _, middle, _ = st.columns([1, 1, 1])  # a 9:16 video at full width is too tall
+            middle.video(str(done.output_path))
     with st.expander("All renders of this Short"):
         st.dataframe([render_row(r) for r in renders], hide_index=True, width="stretch")
     del current, source

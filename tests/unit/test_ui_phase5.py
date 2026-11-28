@@ -22,6 +22,7 @@ SECTIONS = [
     "My Videos",
     "Clip Editor",
     "Finished Shorts",
+    "Analytics",
     "Processing Queue",
     "Settings",
     "Guides & Help",
@@ -56,7 +57,7 @@ def _pages() -> list[tuple[str, str]]:
     return found
 
 
-def test_navigation_has_the_eight_sections_in_order() -> None:
+def test_navigation_has_every_section_in_order() -> None:
     assert [t for t, _ in _pages()] == SECTIONS
 
 

@@ -19,10 +19,15 @@ from pathlib import Path
 from types import FrameType
 
 from iftyedits import __version__
+from iftyedits.adapters.caption_render import shaping_environment
 from iftyedits.adapters.faster_whisper import engine_version
 from iftyedits.adapters.ffmpeg import FFmpeg
 from iftyedits.adapters.ffprobe import FFprobe
-from iftyedits.adapters.model_store import build_model_store
+from iftyedits.adapters.model_store import (
+    FACE_MODEL,
+    build_face_model_store,
+    build_model_store,
+)
 from iftyedits.config import Settings, project_home
 from iftyedits.core.clip_models import ClipCandidate, ClipDecision
 from iftyedits.core.errors import IftyEditsError
@@ -39,6 +44,7 @@ from iftyedits.core.shorts import CAPTION_PRESETS
 from iftyedits.core.sources import PERMISSION_NOTICE, parse_video_url
 from iftyedits.pipeline.jobs import JobQueue
 from iftyedits.pipeline.worker import Worker
+from iftyedits.services.analytics import build_analytics_service
 from iftyedits.services.ingest import IngestService, build_vault, discover, validate_source
 from iftyedits.services.production import ProductionOptions
 from iftyedits.services.subtitles import EXPORT_FORMATS, export
@@ -49,6 +55,7 @@ from iftyedits.storage.originals import ProgressCallback, assert_safe_output_pat
 from iftyedits.storage.processing import ProcessingRepository
 from iftyedits.storage.transcripts import TranscriptRepository
 from iftyedits.storage.videos import VideoRepository
+from iftyedits.ui.analytics import video_rows
 from iftyedits.ui.clips import (
     DECISION_FILTERS,
     SORT_OPTIONS,
@@ -316,9 +323,40 @@ def cmd_artifacts(settings: Settings, args: argparse.Namespace) -> int:
     return EXIT_OK if intact else EXIT_FAILED
 
 
+def cmd_analytics(settings: Settings, args: argparse.Namespace) -> int:
+    """Follow uploaded videos and fetch their numbers (read only on YouTube)."""
+    with closing(open_database(settings.db_path)) as conn:
+        service = build_analytics_service(settings, conn)
+        if args.action == "add":
+            if not args.video:
+                print("Name a video link or id: iftyedits analytics add <link>", file=sys.stderr)
+                return EXIT_USAGE
+            print(f"following {service.add_video(args.video, args.short)}")
+            return EXIT_OK
+        if args.action == "refresh":
+            report = service.refresh(args.days)
+            print(f"updated {report.updated} video(s), {report.detailed} with watch time")
+            for video_id, reason in report.skipped:
+                print(f"  skipped {video_id}: {reason}")
+            if report.note:
+                print(report.note)
+            return EXIT_OK
+        service.sync_uploads()
+        videos = service.videos()
+        if not videos:
+            print("No videos are being followed.")
+        for row in video_rows(videos):
+            print(
+                f"{row['Video'][:50]:<50} views {row['Views']:>7}  likes {row['Likes']:>6}  "
+                f"watched {row['Avg watched']:>5}  {row['Link']}"
+            )
+    return EXIT_OK
+
+
 def cmd_models(settings: Settings, args: argparse.Namespace) -> int:
-    """List speech models, or download / verify one."""
-    store = build_model_store(settings)
+    """List models, or download / verify one."""
+    faces = build_face_model_store(settings)
+    store = faces if args.name == FACE_MODEL else build_model_store(settings)
     if args.action == "list":
         print(f"models dir  {store.root}")
         for status in store.statuses():
@@ -328,6 +366,12 @@ def cmd_models(settings: Settings, args: argparse.Namespace) -> int:
                 f"RAM ~{row['RAM (approx.)']:<7} {row['Notes']}"
             )
         print(f"default     {settings.transcription_model}")
+        face = faces.status(FACE_MODEL)
+        print(f"faces dir   {faces.root}")
+        print(
+            f"  {FACE_MODEL:<15} {face.state.value:<18} "
+            f"{human_size(face.spec.size_bytes):>9}  {face.spec.summary}"
+        )
         return EXIT_OK
     if not args.name:
         print("Name a model, for example: iftyedits models download small", file=sys.stderr)
@@ -956,9 +1000,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--verify", action="store_true", help="re-hash every generated file")
     p.set_defaults(func=cmd_artifacts)
 
-    p = sub.add_parser("models", help="list, download or verify speech models")
+    p = sub.add_parser("analytics", help="performance of uploaded Shorts (read only)")
+    p.add_argument("action", nargs="?", default="list", choices=["list", "add", "refresh"])
+    p.add_argument("video", nargs="?", help="YouTube link or video id (for add)")
+    p.add_argument("--short", type=int, help="id of the Short the video came from (for add)")
+    p.add_argument("--days", type=int, default=28, help="window for watch time (for refresh)")
+    p.set_defaults(func=cmd_analytics)
+
+    p = sub.add_parser("models", help="list, download or verify speech and face models")
     p.add_argument("action", nargs="?", default="list", choices=["list", "download", "verify"])
-    p.add_argument("name", nargs="?", help="model name, e.g. small")
+    p.add_argument("name", nargs="?", help="model name, e.g. small or yunet")
     p.set_defaults(func=cmd_models)
 
     p = sub.add_parser("transcribe", help="queue transcription of imported videos")
@@ -1028,9 +1079,19 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _restart_for_text_shaping() -> None:
+    """Restart once so Hindi captions can load FriBiDi; child processes inherit the setting."""
+    env = shaping_environment(os.environ)
+    if env is not None:
+        command = [sys.executable, "-m", "iftyedits.cli", *sys.argv[1:]]
+        os.execve(sys.executable, command, env)  # noqa: S606 - our own interpreter, fixed argv
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Entry point."""
     args = build_parser().parse_args(argv)
+    if argv is None:  # the real command line, not an in-process call
+        _restart_for_text_shaping()
     try:
         settings = Settings.from_env()
     except ValueError as exc:

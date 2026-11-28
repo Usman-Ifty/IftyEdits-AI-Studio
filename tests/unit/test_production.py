@@ -175,6 +175,15 @@ def test_full_run_exports_each_clip_separately_with_monotonic_progress() -> None
     assert len(shorts.saved) == 3  # the chosen caption preset was applied
 
 
+def test_auto_framing_keeps_the_chosen_caption_style() -> None:
+    shorts = FramingShorts()
+    service, _ = make([cand(1, 90)], shorts, [])
+    run(service, ProductionOptions(max_clips=1, caption_preset="boxed"))
+    last = cast(ShortConfig, shorts.saved[-1])
+    assert last.crop_position == 0.8  # framing was saved
+    assert last.captions.preset == "boxed"
+
+
 def test_a_failed_clip_does_not_stop_or_spoil_the_others() -> None:
     service, shorts = make(
         [cand(1, 90), cand(2, 80), cand(3, 70)], FakeShorts(fail_keys={"key0002"}), []

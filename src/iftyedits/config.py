@@ -57,6 +57,8 @@ class Settings(BaseSettings):
     ffmpeg_timeout_s: float = Field(default=6 * 3600.0, gt=0)
     proxy_encoder: EncoderPreference = "auto"
     export_encoder: EncoderPreference = "auto"
+    face_framing: bool = True
+    """Follow faces with the vertical crop when the face model is installed."""
     min_free_bytes: int = 2 * 1024**3
     transcription_model: str = "small"
     transcription_language: str = "auto"
@@ -96,6 +98,7 @@ class Settings(BaseSettings):
     youtube_chunk_mb: int = Field(default=8, ge=1, le=64)
     youtube_api_base: str = "https://www.googleapis.com/youtube/v3"
     youtube_upload_base: str = "https://www.googleapis.com/upload/youtube/v3"
+    youtube_analytics_base: str = "https://youtubeanalytics.googleapis.com/v2"
     """Only for local test stubs: must be a Google HTTPS address or http on this computer."""
     youtube_daily_upload_limit: int = Field(default=5, ge=0)
     """Soft limit on uploads started per day in this studio (0 = no limit)."""

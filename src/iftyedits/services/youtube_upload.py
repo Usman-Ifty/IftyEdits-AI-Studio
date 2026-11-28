@@ -104,6 +104,7 @@ class YouTubeUploadService:
             chunk_bytes=self.settings.youtube_chunk_mb * 1024 * 1024,
             api_base=self.settings.youtube_api_base,
             upload_base=self.settings.youtube_upload_base,
+            analytics_base=self.settings.youtube_analytics_base,
         )
 
     def connection(self) -> Connection:
@@ -114,6 +115,10 @@ class YouTubeUploadService:
         except YouTubeNotConfiguredError as exc:
             return Connection(False, False, str(exc))
         return Connection(True, store.load() is not None, "", str(store.path))
+
+    def client(self) -> YouTubeClient:
+        """A client for the saved connection (also used for reading analytics)."""
+        return self._factory()
 
     def connect(self, on_url: Callable[[str], None] | None = None) -> None:
         """Browser sign-in. Blocks until finished."""

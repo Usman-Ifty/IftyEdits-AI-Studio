@@ -75,9 +75,10 @@ with st.expander("4. Edit a Short"):
     st.markdown(
         f"Open a suggestion with Edit as a Short. Length must be {MIN_CLIP_S:.0f} to "
         f"{MAX_CLIP_S:.0f} seconds. **Framing** has a crop slider and *Auto-frame*. "
-        "Auto-frame looks at frames across the clip, picks the busiest part of the picture "
-        "and, if it shifts, pans slowly with it (no jumps, a hard cut may reposition at "
-        "once). It does not recognise faces or people, so check the crop guide. "
+        "Auto-frame looks at frames across the clip. With the face model installed "
+        "(`iftyedits models download yunet`) it follows faces; otherwise it picks the "
+        "busiest part of the picture. It pans slowly and jumps only at scene cuts. It "
+        "never identifies anyone and can miss, so check the crop guide. "
         "The mode shown above the slider tells you whether the crop is *Auto-follow* or "
         "*Manual*: moving the slider or the trim by hand switches to manual, and automatic "
         "production never overrides a crop you set. **Captions** has presets (Clean creator, "
@@ -91,6 +92,15 @@ with st.expander("5. Export and find your files"):
         "Existing files are never overwritten; a new version gets a new name."
     )
     st.code(f"{settings.exports_dir}/shorts/<video-name>-v<id>/", language="text")
+
+with st.expander("6. Upload and see how it performs (optional)"):
+    st.markdown(
+        "Clip Editor > Upload package walks through title and description, safety review, "
+        "rights and a checklist. With YouTube connected (Settings), it can upload as Private "
+        "or Unlisted after you approve the exact details; you publish in YouTube Studio. "
+        "**Analytics** then shows views and likes when you press Refresh numbers, and watch "
+        "time if you allow detailed analytics. It only reads from YouTube."
+    )
 
 with st.expander("What the scores mean"):
     st.markdown(
@@ -117,7 +127,8 @@ st.markdown(
     "- **Formats:** " + ", ".join(settings.video_extensions) + "\n"
     "- **Needs:** FFmpeg and FFprobe installed (`uv run iftyedits check` verifies them).\n"
     "- **Your data:** videos, database and exports stay under "
-    f"`{settings.data_dir}`. Nothing is uploaded anywhere by this app.\n"
+    f"`{settings.data_dir}`. Nothing is uploaded unless you approve that upload yourself "
+    "(optional AI writing may send transcript text to the provider you set up).\n"
     "- **Rights:** you are responsible for having permission to reuse a video; the "
     "studio cannot judge copyright, fair use or platform rules.\n"
     "- **Common problems:** *no worker running* means start `uv run iftyedits worker` "

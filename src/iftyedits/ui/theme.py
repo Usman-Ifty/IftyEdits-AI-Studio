@@ -28,23 +28,33 @@ h2, h3 { font-weight: 650; letter-spacing: -0.01em; }
   border: 1px solid #243049; border-radius: 14px; padding: 14px 16px;
 }
 [data-testid="stMetricLabel"] { color: #8C97B2; }
+[data-testid="stMetricValue"] { font-size: 1.35rem; line-height: 1.3; }
+[data-testid="stMetricValue"] > div { white-space: normal; overflow-wrap: anywhere; }
 div[data-testid="stVerticalBlockBorderWrapper"] { border-radius: 14px; }
 .stButton > button[kind="primary"], .stFormSubmitButton > button[kind="primary"] {
   background: linear-gradient(135deg, #7C6CFF 0%, #4C8DFF 100%); border: 0; color: #fff;
   font-weight: 650;
 }
 .stButton > button, .stFormSubmitButton > button { border-radius: 10px; }
+.stButton > button p, .stFormSubmitButton > button p { white-space: normal; }
+.stButton > button:disabled, .stFormSubmitButton > button:disabled {
+  opacity: .45; filter: grayscale(.7);
+}
+.stButton > button:focus-visible, .stFormSubmitButton > button:focus-visible {
+  outline: 2px solid #5CC8FF; outline-offset: 2px;
+}
+[data-testid="stImage"] img { border-radius: 12px; }
 .ie-hero {
-  border: 1px solid #243049; border-radius: 18px; padding: 26px 30px; margin-bottom: 18px;
+  border: 1px solid #243049; border-radius: 16px; padding: 16px 22px; margin-bottom: 14px;
   background: radial-gradient(900px 260px at 0% 0%, rgba(124,108,255,.22), transparent 60%),
               radial-gradient(700px 240px at 100% 0%, rgba(76,141,255,.16), transparent 60%),
               #101727;
 }
-.ie-hero h1 { margin: 0 0 6px 0; font-size: 2rem; }
+.ie-hero h1 { margin: 0; padding: 0 0 4px 0; font-size: 1.6rem; }
 .ie-hero p { margin: 0; color: #B6BFD6; max-width: 46rem; }
 .ie-pill {
   display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: .78rem;
-  font-weight: 600; border: 1px solid transparent; white-space: nowrap;
+  font-weight: 600; border: 1px solid transparent; max-width: 100%; overflow-wrap: anywhere;
 }
 .ie-card {
   border: 1px solid #243049; border-radius: 14px; padding: 14px 16px; margin-bottom: 10px;
@@ -86,12 +96,15 @@ div[data-testid="stVerticalBlockBorderWrapper"] { border-radius: 14px; }
   color:#FFC857; border-color:#FFC85766; background:rgba(255,200,87,.10);
 }
 .ie-journey .ie-step.next b { background:#FFC857; color:#1A1405; }
-.ie-gallery-card {
-  border:1px solid #243049; border-radius:14px; padding:12px 14px; background:#101727;
-  margin-bottom: 6px;
+.ie-gallery-card { padding: 2px 2px 6px 2px; }
+.ie-gallery-card .ie-title {
+  font-weight: 650; overflow-wrap: anywhere; line-height: 1.35; min-height: 2.7em;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
-.ie-gallery-card .ie-title { font-weight: 650; overflow-wrap: anywhere; }
-.ie-gallery-card .ie-meta { color:#8C97B2; font-size:.82rem; margin-top:2px; }
+.ie-gallery-card .ie-meta {
+  color:#8C97B2; font-size:.82rem; margin-top:2px; line-height: 1.45; min-height: 2.9em;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
 .ie-empty {
   border: 1px dashed #2F3D5E; border-radius: 14px; padding: 22px; text-align:center;
   color:#8C97B2; background: rgba(16,23,39,.6);
@@ -100,12 +113,15 @@ div[data-testid="stVerticalBlockBorderWrapper"] { border-radius: 14px; }
 code, pre { overflow-wrap: anywhere; white-space: pre-wrap !important; }
 @media (max-width: 900px) {
   .block-container { padding-left: 1rem; padding-right: 1rem; }
-  .ie-hero { padding: 18px; }
-  .ie-hero h1 { font-size: 1.5rem; }
+  [data-testid="stImage"] img {
+    max-height: 360px; width: auto !important; margin: 0 auto; display: block;
+  }
+  .ie-hero { padding: 14px 16px; }
+  .ie-hero h1 { font-size: 1.35rem; }
 }
 @keyframes ie-rise {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: none; }
+  from { transform: translateY(6px); }
+  to { transform: none; }
 }
 .ie-hero, .ie-card, .ie-empty { animation: ie-rise .28s ease-out both; }
 .ie-pill { transition: background-color .2s ease, border-color .2s ease; }

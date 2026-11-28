@@ -201,15 +201,25 @@ class FasterWhisperTranscriber:
             samples = load_wav(audio)
         except (wave.Error, EOFError, OSError) as exc:
             raise TranscriptionError(f"Could not read the prepared audio: {exc}") from exc
-        try:
-            raw_segments, info = model.transcribe(
+
+        def recognise(language: str | None) -> tuple[Any, Any]:
+            result: tuple[Any, Any] = model.transcribe(
                 samples,
-                language=options.language,
+                language=language,
                 task="transcribe",
                 beam_size=options.beam_size,
                 word_timestamps=options.word_timestamps,
                 vad_filter=options.vad_filter,
             )
+            return result
+
+        try:
+            spoken = "hi" if options.language == "ur" else options.language
+            raw_segments, info = recognise(spoken)
+            if info.language == "ur":
+                # Spoken Urdu and Hindi sound the same. Devanagari keeps the vowels, so it
+                # can be written in Roman letters; Urdu script cannot.
+                raw_segments, info = recognise("hi")
             duration = float(info.duration) if info.duration is not None else None
             for raw in raw_segments:
                 check()

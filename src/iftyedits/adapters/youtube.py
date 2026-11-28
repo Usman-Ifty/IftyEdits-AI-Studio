@@ -29,7 +29,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -50,6 +50,7 @@ AUTH_URI = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URI = "https://oauth2.googleapis.com/token"  # noqa: S105 - public endpoint, not a secret
 API_BASE = "https://www.googleapis.com/youtube/v3"
 UPLOAD_BASE = "https://www.googleapis.com/upload/youtube/v3"
+ANALYTICS_BASE = "https://youtubeanalytics.googleapis.com/v2"
 _CHUNK_MULTIPLE = 256 * 1024
 _MAX_RETRIES = 5
 
@@ -206,13 +207,14 @@ class YouTubeClient:
         chunk_bytes: int = 8 * 1024 * 1024,
         api_base: str = API_BASE,
         upload_base: str = UPLOAD_BASE,
+        analytics_base: str = ANALYTICS_BASE,
         sleep: Callable[[float], None] = time.sleep,
         open_browser: Callable[[str], object] = webbrowser.open,
         clock: Callable[[], float] = time.time,
     ) -> None:
         self.client = client
         self.store = store
-        for base in (api_base, upload_base):
+        for base in (api_base, upload_base, analytics_base):
             if not yt.trusted_endpoint(base):
                 raise YouTubeNotConfiguredError(
                     "The YouTube API address must be on googleapis.com (or this computer)."
@@ -221,6 +223,7 @@ class YouTubeClient:
         self._chunk = max(_CHUNK_MULTIPLE, chunk_bytes - chunk_bytes % _CHUNK_MULTIPLE)
         self._api = api_base.rstrip("/")
         self._upload = upload_base.rstrip("/")
+        self._analytics = analytics_base.rstrip("/")
         self._sleep = sleep
         self._open = open_browser
         self._clock = clock
@@ -231,8 +234,16 @@ class YouTubeClient:
         """Whether a usable refresh token is saved (not whether Google still accepts it)."""
         return self.store.load() is not None
 
-    def authorize(self, wait_s: float = 180.0, on_url: Callable[[str], None] | None = None) -> None:
-        """Browser sign-in on a loopback address. Blocks until done, cancelled or timed out."""
+    def authorize(
+        self,
+        wait_s: float = 180.0,
+        on_url: Callable[[str], None] | None = None,
+        extra_scopes: tuple[str, ...] = (),
+    ) -> None:
+        """Browser sign-in on a loopback address. Blocks until done, cancelled or timed out.
+
+        ``extra_scopes`` asks for optional permissions on top of the upload ones.
+        """
         verifier, challenge = _pkce()
         state = secrets.token_urlsafe(24)
         handler = type("Handler", (_Callback,), {"result": {}, "done": threading.Event()})
@@ -247,7 +258,7 @@ class YouTubeClient:
                     "client_id": self.client.client_id,
                     "redirect_uri": redirect,
                     "response_type": "code",
-                    "scope": " ".join(yt.SCOPES),
+                    "scope": " ".join((*yt.SCOPES, *extra_scopes)),
                     "access_type": "offline",
                     "prompt": "consent",
                     "state": state,
@@ -378,6 +389,65 @@ class YouTubeClient:
         if kind == yt.KIND_AUTH:
             return YouTubeAuthError(message, kind)
         return YouTubeUploadError(message, kind)
+
+    def granted_scopes(self) -> frozenset[str]:
+        """Permissions Google granted to the saved sign-in (empty when not connected)."""
+        saved = self.store.load()
+        return frozenset(str(saved.get("scope", "")).split()) if saved else frozenset()
+
+    def _get_json(self, url: str) -> dict[str, Any]:
+        req = urllib.request.Request(  # noqa: S310 - base address checked in __init__
+            url, headers={"Authorization": f"Bearer {self.access_token()}"}
+        )
+        try:
+            with _OPENER.open(req, timeout=self._timeout) as response:
+                data = json.loads(response.read(2_000_000))
+        except urllib.error.HTTPError as exc:
+            raise self._error(exc) from exc
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            raise YouTubeError("Could not reach YouTube.", yt.KIND_NETWORK) from exc
+        if not isinstance(data, dict):
+            raise YouTubeError("YouTube sent an unexpected reply.", yt.KIND_OTHER)
+        return data
+
+    def video_list(self, video_ids: Sequence[str]) -> dict[str, Any]:
+        """``videos.list`` reply (details and public statistics) for up to 50 ids. Read only."""
+        query = urllib.parse.urlencode(
+            {"part": "snippet,status,statistics", "id": ",".join(video_ids)}
+        )
+        return self._get_json(f"{self._api}/videos?{query}")
+
+    def analytics_report(
+        self, video_ids: Sequence[str], start_date: str, end_date: str, metrics: Sequence[str]
+    ) -> dict[str, Any]:
+        """Per-video Analytics report for the signed-in channel. Read only."""
+        query = urllib.parse.urlencode(
+            {
+                "ids": "channel==MINE",
+                "startDate": start_date,
+                "endDate": end_date,
+                "metrics": ",".join(metrics),
+                "dimensions": "video",
+                "filters": "video==" + ",".join(video_ids),
+                "sort": "-views",
+                "maxResults": str(len(video_ids)),
+            }
+        )
+        return self._get_json(f"{self._analytics}/reports?{query}")
+
+    def traffic_report(self, video_id: str, start_date: str, end_date: str) -> dict[str, Any]:
+        """Views by traffic source for one video of the signed-in channel. Read only."""
+        query = urllib.parse.urlencode(
+            {
+                "ids": "channel==MINE",
+                "startDate": start_date,
+                "endDate": end_date,
+                "metrics": "views",
+                "dimensions": "insightTrafficSourceType",
+                "filters": f"video=={video_id}",
+            }
+        )
+        return self._get_json(f"{self._analytics}/reports?{query}")
 
     def channel(self) -> tuple[str, str]:
         """``(channel id, title)`` of the signed-in account's channel."""

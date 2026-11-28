@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from iftyedits.adapters.faces import load_face_detector
 from iftyedits.adapters.faster_whisper import FasterWhisperTranscriber
 from iftyedits.adapters.ffmpeg import FFmpeg
 from iftyedits.adapters.ffprobe import FFprobe
@@ -238,6 +239,7 @@ class Worker:
                 self.queue,
                 self.prober,
                 lambda: self.export_transcoder_factory(settings),
+                load_face_detector(settings),
             )
         return self._shorts
 

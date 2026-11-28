@@ -335,7 +335,10 @@ recommendations, not predictions. Fixture-based regression tests cover scoring.
 ---
 
 > **Status (2026-11-22):** Phases 3A-3C were delivered together as one slice; see D24 and
-> PROGRESS.md. Not built: face-aware reframing, transitions, contact sheets.
+> PROGRESS.md. Not built: transitions, contact sheets.
+>
+> **Update (2026-11-27):** face detection (2A.3) and face-guided cropping (3A) are implemented
+> (D36). Speaker tracking and split-screen layouts are not built.
 
 # Phase 3A — Vertical Reframing
 
@@ -481,6 +484,10 @@ detection remains out of scope until a model can be verified offline.
 - Source files remain unchanged.
 - Output is stored in the configured export directory.
 
+**Status (2026-11-27): IN PROGRESS.** Single, one-click and favourites batch export are built
+and tested locally (D38). Jobs are cancelled one at a time on Processing Queue. Open: review
+and merge.
+
 ---
 
 # Phase 6 — Safety, Rights and Policy Review
@@ -565,6 +572,11 @@ _Status (2026-11-22): implemented and tested against a stub of Google's APIs; no
 - Comparisons show sample sizes and time windows.
 - Recommendations explain their basis.
 - No automatic publishing or destructive optimization occurs.
+
+**Status (2026-11-27): IN PROGRESS.** Built and tested against a local stub: optional consent,
+snapshots, linking to Shorts, comparisons with sample sizes (D37) and traffic sources (D38).
+Open: verification against real Google, and ranking tuning from performance data (needs enough
+published videos).
 
 ---
 

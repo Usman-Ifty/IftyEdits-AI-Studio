@@ -27,6 +27,7 @@ from iftyedits.core.clip_models import (
     StoredSignal,
 )
 from iftyedits.core.errors import ClipAnalysisError, ClipNotFoundError
+from iftyedits.core.romanize import romanize
 from iftyedits.core.scoring import Feedback, category_bias
 from iftyedits.storage.db import transaction, utc_now
 from iftyedits.storage.processing import assert_job_owned
@@ -59,7 +60,7 @@ def _span_json(span: ClipSpan) -> str:
 
 def _span(raw: str) -> ClipSpan:
     start, end, text = json.loads(raw)
-    return ClipSpan(float(start), float(end), str(text))
+    return ClipSpan(float(start), float(end), romanize(str(text)))
 
 
 def _analysis(row: sqlite3.Row) -> ClipAnalysis:
@@ -98,8 +99,8 @@ def _candidate(row: sqlite3.Row) -> ClipCandidate:
         end_s=row["end_s"],
         category=row["category"],
         methods=tuple(json.loads(row["methods_json"])),
-        title=row["title"],
-        excerpt=row["excerpt"],
+        title=romanize(row["title"]),
+        excerpt=romanize(row["excerpt"]),
         hook=_span(row["hook_json"]),
         context=_span(row["context_json"]) if row["context_json"] else None,
         payoff=_span(row["payoff_json"]),
@@ -108,7 +109,7 @@ def _candidate(row: sqlite3.Row) -> ClipCandidate:
         components=components,
         strengths=tuple(json.loads(row["strengths_json"])),
         weaknesses=tuple(json.loads(row["weaknesses_json"])),
-        explanation=row["explanation"],
+        explanation=romanize(row["explanation"]),
         signal_positions=tuple(json.loads(row["signal_positions_json"])),
         evidence=json.loads(row["evidence_json"]),
         decision=ClipDecision(row["decision"]) if row["decision"] else None,

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from iftyedits.core.models import Job
+from iftyedits.core.romanize import romanize
 from iftyedits.storage.shorts import ShortRender
 from iftyedits.ui.formatting import human_size
 from iftyedits.ui.theme import clip_status
@@ -38,7 +39,7 @@ def production_rows(job: Job) -> list[dict[str, Any]]:
         rows.append(
             {
                 "#": clip.get("rank"),
-                "Title": clip.get("title"),
+                "Title": romanize(str(clip.get("title") or "")),
                 "Score": clip.get("score"),
                 "Status": label,
                 "Length (s)": clip.get("duration_s"),

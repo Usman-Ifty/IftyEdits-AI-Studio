@@ -53,6 +53,10 @@ class Google:
         self.received = 0
         self.total = 0
         self.token_status = 200
+        self.videos: list[dict[str, object]] = []  # videos.list items
+        self.report: dict[str, object] = {}
+        self.report_status = 200
+        self.traffic: dict[str, object] = {}
         google = self
 
         class H(http.server.BaseHTTPRequestHandler):
@@ -100,6 +104,16 @@ class Google:
                 if self.path.startswith("/youtube/v3/channels"):
                     items = [google.channel] if google.channel else []
                     return self._send(200, json.dumps({"items": items}).encode())
+                parsed = urllib.parse.urlparse(self.path)
+                query = urllib.parse.parse_qs(parsed.query)
+                if parsed.path == "/youtube/v3/videos":
+                    wanted = query["id"][0].split(",")
+                    found = [v for v in google.videos if v["id"] in wanted]
+                    return self._send(200, json.dumps({"items": found}).encode())
+                if parsed.path == "/v2/reports":
+                    traffic = query["dimensions"][0] == "insightTrafficSourceType"
+                    reply = json.dumps(google.traffic if traffic else google.report).encode()
+                    return self._send(google.report_status, reply)
                 self._send(404)
 
             def do_PUT(self) -> None:
@@ -160,6 +174,7 @@ def make_client(
         chunk_bytes=chunk,
         api_base=f"{g.base}/youtube/v3",
         upload_base=f"{g.base}/upload/youtube/v3",
+        analytics_base=f"{g.base}/v2",
         sleep=lambda s: None,
     )
 

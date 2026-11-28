@@ -10,7 +10,8 @@ from iftyedits.config import Settings
 from iftyedits.core.models import CancelOutcome, JobStatus
 from iftyedits.pipeline.jobs import PRODUCE_VIDEO, JobQueue
 from iftyedits.storage.db import open_database
-from iftyedits.ui import chrome
+from iftyedits.storage.videos import VideoRepository
+from iftyedits.ui import chrome, theme
 from iftyedits.ui.exports import production_rows
 from iftyedits.ui.formatting import JOB_KIND_LABELS, job_row, job_status_label, job_target
 
@@ -38,9 +39,12 @@ def job_board() -> None:
         active = queue.list_active()
         recent = queue.list_recent(limit=100)
         workers = queue.live_workers()
+        names = {
+            v.id: v.original_filename for v in VideoRepository(conn).list_recent(limit=100_000)
+        }
 
     if workers:
-        st.success(f"Worker running: {', '.join(workers)}")
+        st.markdown(theme.pill("Worker running", "good"), unsafe_allow_html=True)
     elif active:
         st.warning("Jobs are waiting but no worker is running. Start `uv run iftyedits worker`.")
 
@@ -65,7 +69,9 @@ def job_board() -> None:
     for job in active:
         with st.container(border=True):
             kind = JOB_KIND_LABELS.get(job.kind, job.kind)
-            st.markdown(f"**Job {job.id}** · {kind} · {job_target(job)} · {job_status_label(job)}")
+            st.markdown(
+                f"**Job {job.id}** · {kind} · {job_target(job, names)} · {job_status_label(job)}"
+            )
             st.progress(min(1.0, max(0.0, job.progress)), text=job.message or "Waiting")
             if job.cancel_requested_at:
                 st.caption("Cancellation requested; waiting for the worker to stop.")
@@ -80,9 +86,10 @@ def job_board() -> None:
         st.caption("No finished jobs yet.")
         return
     st.dataframe(
-        [job_row(j) for j in finished],
+        [job_row(j, names) for j in finished],
         hide_index=True,
         width="stretch",
+        column_order=("Kind", "File", "Status", "Outcome", "Detail", "Created (UTC)", "ID"),
         column_config={
             "Progress": st.column_config.ProgressColumn(
                 min_value=0.0, max_value=1.0, format="percent"
@@ -91,7 +98,7 @@ def job_board() -> None:
     )
     productions = [j for j in finished if j.kind == PRODUCE_VIDEO and production_rows(j)]
     for job in productions[:5]:
-        with st.expander(f"Production summary: job {job.id} ({job_target(job)})"):
+        with st.expander(f"Production summary: job {job.id} ({job_target(job, names)})"):
             st.dataframe(production_rows(job), hide_index=True, width="stretch")
     retryable = [
         j
@@ -103,7 +110,9 @@ def job_board() -> None:
     for job in retryable[:3]:
         label = "failed" if job.status is JobStatus.FAILED else "was cancelled"
         a, b = st.columns([4, 1])
-        a.caption(f"Production job {job.id} ({job_target(job)}) {label}. Finished work is reused.")
+        a.caption(
+            f"Production job {job.id} ({job_target(job, names)}) {label}. Finished work is reused."
+        )
         if b.button("Retry", key=f"retry-job-{job.id}", help="Runs the same production again."):
             with closing(open_database(settings.db_path)) as conn:
                 _, created = JobQueue(conn).enqueue_production(
@@ -116,7 +125,7 @@ def job_board() -> None:
     if failed:
         with st.expander(f"Errors ({len(failed)})"):
             for job in failed:
-                st.error(f"Job {job.id} ({job_target(job)}): {job.error}")
+                st.error(f"Job {job.id} ({job_target(job, names)}): {job.error}")
 
 
 job_board()

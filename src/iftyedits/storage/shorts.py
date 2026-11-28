@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from iftyedits.core.errors import ShortConfigError
+from iftyedits.core.romanize import romanize
 from iftyedits.core.shorts import ShortConfig
 from iftyedits.storage.db import transaction, utc_now
 
@@ -74,7 +75,7 @@ def _project(row: sqlite3.Row) -> ShortProject:
         id=row["id"],
         video_id=row["video_id"],
         candidate_key=row["candidate_key"],
-        title=row["title"],
+        title=romanize(row["title"]),
         original_start_s=row["original_start_s"],
         original_end_s=row["original_end_s"],
         config=ShortConfig.from_json(row["config_json"]),

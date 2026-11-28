@@ -591,3 +591,100 @@ job and then returned it to the queue.
 **Trade-offs.** "Healthy" means a Streamlit health check answers; another Streamlit app on the same
 port would look the same. A very small race remains if two launches happen at once. A worker killed
 without cleanup counts as active for up to 15 seconds.
+
+## D36 — Face-aware framing with YuNet on ONNX Runtime (2026-11-27)
+
+**Context.** Detail-based framing often missed the person in a clip. Face detection (roadmap 2A.3
+and 3A) had been deferred until a model could be verified.
+
+**Decision.** YuNet `face_detection_yunet_2023mar.onnx` (OpenCV Zoo, MIT, 232,589 bytes), pinned
+to a Hugging Face revision and SHA-256, downloaded only on request through the existing verified
+model store. It runs on the CPU with `onnxruntime`, already locked as a faster-whisper dependency
+and now declared directly. Decoding and non-maximum suppression are a small NumPy adapter. Shots
+are split at the stored scene cuts (and large picture changes), sampled about once per second,
+and smoothed by the existing path follower, which now jumps at cuts and keeps those jumps when
+thinning keyframes. This supersedes the "no face tracking" note in D25 and D26.
+
+**Alternatives.** OpenCV `FaceDetectorYN` would add a large dependency for the same model. Apple
+Vision needs the PyObjC bridge and would not be testable on the Linux CI runner.
+
+**Trade-offs.** No speaker detection: with two distant faces the window keeps one until the other
+is clearly larger. Small faces (under 8% of frame height) are ignored, so crowds and tiny webcam
+boxes do not steer the crop. Checked on stills from one gameplay video only; podcast and webcam
+footage still need a real-media review.
+
+## D37 — Read-only analytics with two Google sources (2026-11-27)
+
+**Context.** Roadmap Phase 8: optional performance tracking, linked to the right clip, with sample
+sizes and no automatic changes.
+
+**Decision.** Views, likes and comments come from the Data API `videos.list`, which the existing
+`youtube.readonly` permission covers. Watch time and retention come from the YouTube Analytics API
+`reports.query`, whose `yt-analytics.readonly` scope is requested separately and only when the
+owner asks. Numbers are fetched on demand and stored as snapshots (migration `0011`). Videos on
+another channel are skipped. Comparisons show medians per editing choice and need two groups of at
+least five videos. Plain `urllib` is used, as for upload; no Google client library was added.
+
+**Alternatives.** Requiring the Analytics scope at sign-in would widen consent for people who only
+upload. Scheduled background refresh would spend quota unasked.
+
+**Trade-offs.** No traffic sources, no charts over time and no ranking tuning from performance:
+with a handful of videos any tuning would be noise. Reconnecting in Settings drops the optional
+permission. Not verified against real Google.
+
+## D38 — Interface polish, favourites export and traffic sources (2026-11-27)
+
+**Context.** The owner asked for a much better interface that never gets in the way, and for the
+remaining buildable work. D37 left traffic sources out.
+
+**Decision.** Keep Streamlit and its native components. The gallery shows the newest export of each
+Short, with a picture cached under `data/derived/shorts/thumbs/` and read only from the exports
+folder. Batch export is **Export favourites**, which reuses the single-export path with each clip's
+saved settings. Traffic sources come from `reports.query` with the `insightTrafficSourceType`
+dimension, filtered to one video, stored with the snapshot (migration `0012`). Hide Streamlit's
+Deploy button with `client.toolbarMode = "minimal"`.
+
+**Alternatives.** A separate web frontend would rebuild working pages. A channel-wide traffic report
+would not say which video the views belong to.
+
+**Trade-offs.** One request per video, so a refresh covers the 25 most recently followed videos.
+A failed traffic request leaves a note and keeps the other numbers. The `video==ID` filter follows
+the documented examples but is not verified against real Google. The first gallery visit makes the
+missing pictures, so it is slower once.
+
+## D39 — Hindi captions through Raqm and FriBiDi (2026-11-28)
+
+**Context.** Pillow drew Hindi with Arial, which showed empty boxes. Devanagari also needs complex
+text shaping. Pillow's wheels include Raqm but load FriBiDi from the system at run time.
+
+**Decision.** Install FriBiDi with Homebrew (owner approved; one formula, no dependencies, LGPL and
+GPL tools; nothing is bundled or redistributed). Use macOS's Kohinoor Devanagari font. Python does
+not search `/opt/homebrew/lib`, so on macOS the command line restarts itself once with
+`DYLD_FALLBACK_LIBRARY_PATH` extended; the worker and dashboard inherit it. Refuse captioned
+Devanagari renders when shaping is missing.
+
+**Alternatives.** `uharfbuzz` with a FreeType drawing path would add dependencies and a second text
+renderer. Drawing without shaping gives wrong letter order.
+
+**Trade-offs.** `streamlit run` started by hand does not get the library path, so Hindi previews
+there show the refusal; use `iftyedits ui`. Plain `uv run pytest` skips the three Hindi drawing
+tests. Other Indic scripts remain unsupported.
+
+## D40 — Hindi and Urdu speech written in Roman letters (2026-11-28)
+
+**Context.** The owner does not want Hindi letters: English stays English, and Hindi or Urdu speech
+must appear as Roman Urdu or Hinglish.
+
+**Decision.** A small rule-based converter (`core/romanize.py`) with a table of common words and
+English words that recognition writes in Devanagari. It is applied when transcripts, suggestions
+and Short titles are read, so captions, titles, transcript pages and subtitle downloads are Roman
+while the stored recognition result is unchanged. Speech detected as Urdu is recognised as Hindi,
+because Urdu script leaves out vowels. This supersedes D39 for what appears in captions; its
+Devanagari drawing now only applies to text typed by hand.
+
+**Alternatives.** Transliteration packages produce academic spelling and keep the silent vowels.
+Models that write Hinglish directly are large downloads and were not tried.
+
+**Trade-offs.** Spelling is approximate and misheard words stay misheard. There is no translation.
+Search finds Hindi words only when typed in Devanagari. Transcripts already stored in Urdu script
+stay in Urdu script until transcribed again.

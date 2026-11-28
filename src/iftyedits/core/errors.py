@@ -90,6 +90,10 @@ class ModelDownloadError(IftyEditsError):
     """A speech model could not be downloaded or failed verification."""
 
 
+class FaceDetectionError(IftyEditsError):
+    """The face model could not be loaded or could not read a picture."""
+
+
 class ClipAnalysisError(IftyEditsError):
     """Clip intelligence could not run for a video. The message says why and what to do."""
 
@@ -164,3 +168,7 @@ class YouTubeUploadError(YouTubeError):
 
 class UploadNotApprovedError(YouTubeError):
     """An upload was attempted without a valid, current approval of the exact details."""
+
+
+class AnalyticsError(IftyEditsError):
+    """Performance numbers could not be added or fetched. The message says why."""
