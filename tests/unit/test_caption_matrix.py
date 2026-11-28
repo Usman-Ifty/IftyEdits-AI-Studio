@@ -7,7 +7,7 @@ from collections.abc import Callable
 
 import pytest
 
-from iftyedits.core.captions import MAX_CUE_S, CaptionCue, build_cues
+from iftyedits.core.captions import MAX_CUE_S, MAX_LINGER_S, CaptionCue, build_cues
 from iftyedits.core.models import StoredSegment, TranscriptWord
 from iftyedits.core.shorts import CAPTION_PRESETS, SAFE_BOTTOM, SAFE_TOP, CaptionStyle
 
@@ -220,3 +220,11 @@ def test_every_preset_is_readable(preset: str) -> None:
         assert contrast(style.emphasis_color, style.text_color) < 21  # not the same colour
         assert style.emphasis_color.upper() != style.text_color.upper()
     assert 28 <= style.font_size <= 140
+
+
+def test_a_word_reported_as_very_long_does_not_freeze_the_caption() -> None:
+    words = (TranscriptWord(0.0, 0.5, "dhakka", 0.9), TranscriptWord(0.5, 17.5, "ga", 0.4))
+    segment = StoredSegment(1, 1, 0, 0.0, 17.5, "dhakka ga", -0.1, 0.01, words)
+    cues = build_cues([segment], 0.0, 20.0, CaptionStyle())
+    assert [c.text for c in cues] == ["dhakka ga"]
+    assert cues[0].end_s == MAX_CUE_S + MAX_LINGER_S

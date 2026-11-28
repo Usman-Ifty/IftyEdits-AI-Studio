@@ -934,3 +934,11 @@ characters. Other settings on those ranges did not give a clearly better result.
 transcript was made current again and the Shorts exported from it; the turbo transcript is kept
 (Transcripts, **Version**). Added: removal of broken and non-Latin characters from Hindi
 transcripts. Full suite before the last line-wrap change: 1424 passed, 1 skipped.
+
+## Caption freeze fix and clean install (2026-11-28)
+
+A word reported as very long can no longer keep a caption on screen past 6.5 seconds. Full suite
+with FFmpeg and shaping: 1425 passed, 1 skipped. A fresh clone of commit `4bce302` installed with
+`uv sync --locked` and passed `iftyedits check` (schema 12). Still open: owner-approved real upload,
+real Google analytics, a real AI provider run, real-media review, better Hindi recognition, merge of
+the pull requests.
